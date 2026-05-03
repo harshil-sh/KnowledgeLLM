@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.nuget.org)",
+      "WebSearch",
+      "WebFetch(domain:api.nuget.org)",
+      "PowerShell(Remove-Item *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Harshil\\\\Documents\\\\LLMPortfolio\\\\KnowledgeLLM\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet restore *)",
+      "Bash(dotnet test *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Harshil\\\\Documents\\\\LLMPortfolio\\\\KnowledgeLLM\\\\src\" -Recurse -Directory | ForEach-Object { $_.FullName.Replace\\(\"C:\\\\Users\\\\Harshil\\\\Documents\\\\LLMPortfolio\\\\KnowledgeLLM\\\\src\", \"src\"\\) } | Sort-Object)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Harshil\\\\Documents\\\\LLMPortfolio\\\\KnowledgeLLM\\\\src\" -Recurse -Include \"*.cs\", \"*.fs\", \"*.vb\", \"*.csproj\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem *)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(dotnet script *)",
+      "Bash(dotnet-ildasm WeaveLLM.Core.dll)",
+      "Bash(python3 -c \"import subprocess; r = subprocess.run\\(['ildasm', 'WeaveLLM.Core.dll'], capture_output=True, text=True\\); print\\(r.stdout[:2000]\\)\")"
+    ]
+  }
+}
