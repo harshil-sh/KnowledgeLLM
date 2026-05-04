@@ -1,6 +1,6 @@
 # KnowledgeLLM — Project Knowledge Base
 
-> Last updated: 03 May 2026 (updated after Task 3-B)
+> Last updated: 04 May 2026 (WeaveLLM feedback sweep — L-9 added, error-code case inconsistency documented)
 > Single source of truth for project context, architecture, and conventions.
 
 ---
@@ -14,7 +14,7 @@
 | **Type** | Real application (not a sample, not a library) |
 | **Platform** | .NET 8 / C# |
 | **Core Dependency** | `WeaveLLM.Core 0.1.0-alpha` (NuGet — never ProjectReference) |
-| **Current Stage** | Phase 3 in progress (3-A + 3-B done) |
+| **Current Stage** | Phase 4 in progress (4-A done) |
 
 ---
 
@@ -26,9 +26,8 @@ Published at: https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha
 
 | Type | Purpose |
 |---|---|
-| `ChainResult<T>` | Discriminated union — `Success(T)` or `Failure(ChainError)` |
-| `ChainError` | Structured error with `.Code` (PascalCase) and `.Message` (actionable) |
-| `ChainError.Codes` | Constants: `InvalidInput`, `InvalidConfiguration`, `NetworkTimeout`, `AuthenticationFailed`, `RateLimitExceeded`, `ProviderError`, `NotFound`, `Cancelled` |
+| `ChainResult<T>` | Discriminated union — `Success(T)` or `Failure(WeaveLLMError)`. Properties: `.IsSuccess bool`, `.Value T`, `.Error WeaveLLMError`. |
+| `WeaveLLMError` | Structured error. Properties: `.Code string`, `.Message string`. Factory: `WeaveLLMError.InvalidInput(msg)`. Constructor: `new WeaveLLMError(string msg, string code, Exception? inner = null)`. |
 | `IChain<TIn,TOut>` | `ExecuteAsync(TIn, CancellationToken) → Task<ChainResult<TOut>>` |
 
 ### WeaveLLM ecosystem packages (all 0.1.0-alpha)
@@ -36,7 +35,7 @@ Published at: https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha
 ```
 WeaveLLM.Core                              ← used now (models, ChainResult, error types)
 WeaveLLM.Providers                         ← used now (OpenAIChatModel — Phase 3+)
-WeaveLLM.Memory                            ← Redis, Postgres, CosmosDB (Phase 4)
+WeaveLLM.Memory                            ← not used — Phase 4 uses Npgsql + pgvector directly
 WeaveLLM.Observability                     ← OpenTelemetry (Phase 4)
 WeaveLLM.Extensions.DependencyInjection    ← fluent DI builder (not yet available)
 ```
@@ -145,21 +144,47 @@ services.AddSingleton<IChatModel>(sp =>
 });
 ```
 
-### `WeaveLLMError` is the real error type (not `ChainError`)
+### `WeaveLLMError` is the real error type — error code case is split by origin
 
-Section 2's table lists `ChainError` — the actual type is `WeaveLLMError` (in `WeaveLLM.Core.Models`).
-Error code strings are **SCREAMING_SNAKE_CASE**: `"INVALID_INPUT"`, `"PROVIDER_ERROR"`, `"AUTHENTICATION_FAILED"`, etc.
+The actual error type is `WeaveLLMError` (namespace `WeaveLLM.Core.Models`), not `ChainError`.
+
+**Two code-string conventions exist and are NOT interchangeable:**
+
+| Source | Code style | Example |
+|---|---|---|
+| `WeaveLLMError` static factory methods | SCREAMING_SNAKE_CASE | `WeaveLLMError.InvalidInput(msg)` → `"INVALID_INPUT"` |
+| Manual `new WeaveLLMError(msg, code, ex?)` | Whatever string you pass | `new WeaveLLMError(msg, "NotFound", null)` → `"NotFound"` |
+
+The codebase is **inconsistent**: `OpenAIEmbeddingModel` uses factory methods (SCREAMING_SNAKE_CASE); `InMemoryVectorStore` and `RagPipeline` use manual construction with PascalCase.
+
+⚠️ **Controller-vs-factory bug**: `KnowledgeController.MapError` checks for `"InvalidInput"`, `"InvalidConfiguration"`, `"NotFound"` (PascalCase). `WeaveLLMError.InvalidInput()` produces `"INVALID_INPUT"` (SCREAMING_SNAKE_CASE). This means factory-generated `InvalidInput` errors are sent as HTTP 500, not 400.
+
+**Rule going forward:** when manually constructing `new WeaveLLMError(...)`, use PascalCase codes to match what the controller checks. Reserve factory methods for cases where their code string is tolerable as a 500.
 
 ### Mocking `IChatModel` in tests (NSubstitute)
 
 ```csharp
 var chatModel = Substitute.For<IChatModel>();
+
+// Blocking chat
 chatModel.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
          .Returns(ChainResult<LLMMessage>.Success(new LLMMessage { Role = MessageRole.Assistant, Content = "answer" }));
 
-// Mocking streaming
+// Streaming — DO NOT use .ToAsyncEnumerable() — it does not propagate cancellation (see L-8)
+// Use a static async iterator helper with [EnumeratorCancellation] instead:
+private static async IAsyncEnumerable<string> TokenStream(
+    IEnumerable<string> tokens,
+    [EnumeratorCancellation] CancellationToken ct = default)
+{
+    foreach (var token in tokens)
+    {
+        ct.ThrowIfCancellationRequested();
+        yield return token;
+    }
+}
+
 chatModel.StreamChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
-         .Returns(new[] { "Hello", " world" }.ToAsyncEnumerable());
+         .Returns(TokenStream(new[] { "Hello", " world", "!" }));
 ```
 
 ---
@@ -418,11 +443,50 @@ entirely.
 
 ---
 
+### L-9 — `WeaveLLMError` factory methods produce SCREAMING_SNAKE_CASE codes that conflict with PascalCase conventions
+
+**Severity:** High — silent HTTP status miscategorisation in production  
+**Discovered in:** Task 3-A cross-checked against task 3-C tests
+
+**Problem:**  
+`WeaveLLMError` static factory methods (e.g. `WeaveLLMError.InvalidInput(msg)`) produce
+SCREAMING_SNAKE_CASE error codes (`"INVALID_INPUT"`, `"INVALID_CONFIGURATION"`, etc.).
+The `KnowledgeController.MapError` method checks for PascalCase strings (`"InvalidInput"`,
+`"InvalidConfiguration"`, `"NotFound"`) to decide between HTTP 400 and 500.
+
+Because the codes never match, every error created via a factory method silently becomes
+an HTTP 500, regardless of whether the root cause is a client error (400) or a server
+error (500). `OpenAIEmbeddingModel` — the component most likely to return validation errors
+to the end user — uses factory methods exclusively.
+
+**Confirmed by:**  
+`RagPipelineTests.cs`: `result.Error.Code.Should().Be("INVALID_INPUT")` (factory-method output).  
+`KnowledgeController.cs`: `code is "InvalidInput" or "InvalidConfiguration" or "NotFound"` (PascalCase check).
+
+**Impact:**  
+- All `WeaveLLMError.InvalidInput()` results are mapped to HTTP 500 instead of 400
+- Client-error feedback (bad request body, empty API key) looks like a server fault to callers
+- Error is silent — nothing in the pipeline logs the wrong status code mapping
+- Inconsistency between files makes it hard to predict what HTTP status any given error produces
+
+**Workaround (in use):**  
+Manually construct `new WeaveLLMError(msg, "NotFound", null)` with PascalCase codes where
+the HTTP status matters (e.g. in `InMemoryVectorStore`, `PgVectorStore`, `RagPipeline`).
+Avoid `WeaveLLMError.InvalidInput()` factory in code paths that reach the controller.
+
+**Suggested fix (two options):**  
+a) Update `KnowledgeController.MapError` to check SCREAMING_SNAKE_CASE codes to align with the factory methods:
+   `code is "INVALID_INPUT" or "INVALID_CONFIGURATION" or "NOT_FOUND"`.  
+b) Alternatively, update the factory methods in `WeaveLLM.Core` to emit PascalCase codes and ship a minor version bump.  
+Either way, standardise on one casing across the entire package and document it in the README.
+
+---
+
 ## 3. Non-Negotiable Code Conventions
 
 These apply to every file in this repo, no exceptions:
 
-- **Never throw** — all errors returned as `ChainResult.Failure(ChainError.XYZ(...))`
+- **Never throw** — all errors returned as `ChainResult<T>.Failure(new WeaveLLMError(msg, code, inner?))` or via a factory method
 - **CancellationToken** on every async method
 - **IHttpClientFactory** for all HTTP — never `new HttpClient()`
 - **XML doc comments** on all public members
@@ -464,7 +528,8 @@ KnowledgeLLM/
 │   │   ├── Retrieval/
 │   │   │   ├── IVectorStore.cs
 │   │   │   ├── RetrievalResult.cs
-│   │   │   └── InMemoryVectorStore.cs     ← Phase 1 concrete impl
+│   │   │   ├── InMemoryVectorStore.cs     ← Phase 1 concrete impl
+│   │   │   └── PgVectorStore.cs           ← Phase 4 (Npgsql + pgvector)
 │   │   └── KnowledgeLLM.Core.csproj
 │   └── KnowledgeLLM.Api/
 │       ├── Controllers/
@@ -552,6 +617,16 @@ returns that error immediately — no subsequent stages are called.
 - Endpoint: `POST https://api.openai.com/v1/embeddings`
 - Default model: `text-embedding-3-small` (1536 dimensions)
 - API key validated at call time — app starts with empty key
+
+### PgVectorStore (Phase 4)
+
+- NuGet: `Npgsql 8.0.5`, `Pgvector 0.3.2` — `Pgvector` includes `UseVector()` extension for `NpgsqlDataSourceBuilder`
+- Constructor: `PgVectorStore(string connectionString, int dimensions)` — validates args, builds `NpgsqlDataSource` with `UseVector()`
+- Schema created lazily on first use (double-checked lock via `SemaphoreSlim`): table `chunks` with JSONB `metadata` and `vector(N)` `embedding`; index `chunks_embedding_idx` (ivfflat, cosine ops)
+- Cosine similarity returned as `1.0 - (embedding <=> $query)` — pgvector `<=>` is cosine *distance*
+- `TextChunk.Index` is not stored in the DB schema; reconstructed as `0` on retrieval (not needed for RAG use)
+- Requires `CREATE EXTENSION IF NOT EXISTS vector;` to be run in the target Postgres database before first use
+- DI wire-up deferred to task 4-D (currently must be constructed directly)
 
 ### IChatModel via WeaveLLM.Providers (Phase 3+)
 - Registered as `IChatModel` backed by `OpenAIChatModel` from `WeaveLLM.Providers.OpenAI`
@@ -647,10 +722,15 @@ data: [DONE]
 ```
 
 ### Error mapping (blocking endpoints only)
-| WeaveLLMError code | HTTP Status |
+
+`KnowledgeController.MapError` checks the code string literally — case matters.
+
+| `WeaveLLMError.Code` value (exact string) | HTTP Status |
 |---|---|
-| `INVALID_INPUT`, `INVALID_CONFIGURATION`, `NOT_FOUND` | 400 |
-| All others | 500 |
+| `"InvalidInput"`, `"InvalidConfiguration"`, `"NotFound"` | 400 |
+| All others (including `"INVALID_INPUT"` from factory methods) | 500 |
+
+⚠️ Factory-method-generated codes (`"INVALID_INPUT"`, `"PROVIDER_ERROR"`, etc.) are SCREAMING_SNAKE_CASE and do **not** match the controller's PascalCase checks — they map to 500. See L-9.
 
 ---
 
@@ -659,9 +739,12 @@ data: [DONE]
 ### KnowledgeLLM.Core.csproj
 ```xml
 <PackageReference Include="WeaveLLM.Core" Version="0.1.0-alpha" />
+<PackageReference Include="WeaveLLM.Providers" Version="0.1.0-alpha" />
 <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
 <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
 <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+<PackageReference Include="Npgsql" Version="8.0.5" />
+<PackageReference Include="Pgvector" Version="0.3.2" />
 ```
 
 ### KnowledgeLLM.Core.Tests.csproj
@@ -715,7 +798,7 @@ builder.Services.AddKnowledgeLLM(builder.Configuration);
 | **1** | Solution skeleton, core interfaces, concrete impls (loader, chunker, vector store), API shell | ✅ Complete |
 | **2** | OpenAI embedding, chat completion, configuration, answer generation, integration tests | ✅ Complete |
 | **3** | Replace `OpenAIChatClient` with `WeaveLLM.Providers` (`IChatModel`), streaming endpoint | ✅ Complete (3-A ✅ 3-B ✅ 3-C ✅) |
-| **4** | Persistent vector store (pgvector), additional doc loaders (PDF, Word), observability | ⬜ Pending |
+| **4** | Persistent vector store (pgvector), additional doc loaders (PDF, Word), observability | 🔄 In progress (4-A ✅) |
 
 ---
 
@@ -723,7 +806,7 @@ builder.Services.AddKnowledgeLLM(builder.Configuration);
 
 | File | TODO | Unblocked by |
 |---|---|---|
-| `InMemoryVectorStore.cs` | Replace with pgvector for persistence | Phase 4 |
+| `InMemoryVectorStore.cs` | Replace with `PgVectorStore` via DI (task 4-D) | Phase 4 |
 | `PlainTextDocumentLoader.cs` | Add PDF + Word loaders | Phase 4 |
 | `RagPipeline.cs` | Add OpenTelemetry spans per stage | Phase 5-B |
 

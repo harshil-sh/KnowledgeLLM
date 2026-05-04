@@ -25,7 +25,8 @@
       "PowerShell(ls \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\\")",
       "PowerShell(ls \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\0.1.0-alpha\\\\\" -Recurse | Select-Object -ExpandProperty FullName)",
       "PowerShell($assembly = [System.Reflection.Assembly]::LoadFile\\(\"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\0.1.0-alpha\\\\lib\\\\net8.0\\\\WeaveLLM.Providers.dll\"\\); $assembly.GetTypes\\(\\) | Select-Object FullName, IsInterface | Sort-Object IsInterface -Descending)",
-      "PowerShell(grep *)"
+      "PowerShell(grep *)",
+      "PowerShell(dotnet package search *)"
     ]
   }
 }

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="KnowledgeLLM.Core.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,6 +17,9 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="WeaveLLM.Providers" Version="0.1.0-alpha" />
+    <PackageReference Include="Npgsql" Version="8.0.5" />
+    <PackageReference Include="Pgvector" Version="0.3.2" />
+    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
 </Project>

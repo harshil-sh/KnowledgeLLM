@@ -495,7 +495,7 @@ Add to Core.csproj: <PackageReference Include="PdfPig" Version="0.1.9" />
 
 ---
 
-### 4-C 🟡 GitHub Copilot — Tests for Phase 4 classes
+### 4-C 🟡 GitHub Copilot — Tests for Phase 4 classes (*)
 
 ```
 Using #file:PgVectorStore.cs #file:PdfDocumentLoader.cs
@@ -629,7 +629,7 @@ Update CLAUDE.md to reflect the completed project state:
 | 3-A | WeaveLLM.Providers swap | 🤖 Claude | 3 | ⬜ |
 | 3-B | Streaming endpoint | 🤖 Claude | 3 | ⬜ |
 | 3-C | Streaming tests | 🟡 Copilot | 3 | ⬜ |
-| 4-A | pgvector store | 🤖 Claude | 4 | ⬜ |
+| 4-A | pgvector store | 🤖 Claude | 4 | ✅ |
 | 4-B | PDF document loader | 🤖 Claude | 4 | ⬜ |
 | 4-C | Phase 4 tests | 🟡 Copilot | 4 | ⬜ |
 | 4-D | DI update Phase 4 | 🟡 Copilot | 4 | ⬜ |
