@@ -11,6 +11,9 @@ public class KnowledgeLLMOptions
 
     /// <summary>Text chunking settings used by the ingestion pipeline.</summary>
     public ChunkerOptions Chunker { get; set; } = new();
+
+    /// <summary>Optional PostgreSQL/pgvector vector store settings.</summary>
+    public PgVectorOptions PgVector { get; set; } = new();
 }
 
 /// <summary>Configuration options for the OpenAI client.</summary>
@@ -37,4 +40,17 @@ public class ChunkerOptions
 
     /// <summary>Number of characters that consecutive chunks share as overlap.</summary>
     public int Overlap { get; set; } = 100;
+}
+
+/// <summary>Configuration options for the PostgreSQL/pgvector vector store.</summary>
+public class PgVectorOptions
+{
+    /// <summary>
+    /// When <see langword="true"/>, <see cref="KnowledgeLLM.Core.Retrieval.PgVectorStore"/> is registered
+    /// as <c>IVectorStore</c>; otherwise the in-memory store is used.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>PostgreSQL connection string used to connect to the pgvector-enabled database.</summary>
+    public string ConnectionString { get; set; } = string.Empty;
 }
