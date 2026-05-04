@@ -1,9 +1,14 @@
+using System.Runtime.CompilerServices;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Documents;
 using KnowledgeLLM.Core.Embeddings;
 using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging;
 using WeaveLLM.Core.Models;
+using IChatModel = WeaveLLM.Core.Providers.IChatModel;
+using LLMMessage = WeaveLLM.Core.Providers.Message;
+using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
+using MessageRole = WeaveLLM.Core.Providers.MessageRole;
 
 namespace KnowledgeLLM.Core.Pipeline;
 
@@ -14,7 +19,7 @@ public sealed class RagPipeline : IRagPipeline
     private readonly ITextChunker _chunker;
     private readonly IEmbeddingModel _embeddingModel;
     private readonly IVectorStore _vectorStore;
-    private readonly OpenAIChatClient _chatClient;
+    private readonly IChatModel _chatModel;
     private readonly ILogger<RagPipeline> _logger;
 
     /// <summary>Initialises the pipeline with all required dependencies.</summary>
@@ -23,14 +28,14 @@ public sealed class RagPipeline : IRagPipeline
         ITextChunker chunker,
         IEmbeddingModel embeddingModel,
         IVectorStore vectorStore,
-        OpenAIChatClient chatClient,
+        IChatModel chatModel,
         ILogger<RagPipeline> logger)
     {
         _loader = loader;
         _chunker = chunker;
         _embeddingModel = embeddingModel;
         _vectorStore = vectorStore;
-        _chatClient = chatClient;
+        _chatModel = chatModel;
         _logger = logger;
     }
 
@@ -94,8 +99,8 @@ public sealed class RagPipeline : IRagPipeline
     }
 
     /// <summary>
-    /// Answers <paramref name="question"/> via: Embed → Search → BuildPrompt.
-    /// The answer is the numbered context list; LLM completion is a Week-2 TODO.
+    /// Answers <paramref name="question"/> via: Embed → Search → BuildPrompt → ChatAsync.
+    /// Short-circuits on the first failure and returns the propagated error.
     /// </summary>
     /// <param name="question">User question.</param>
     /// <param name="topK">Number of chunks to retrieve.</param>
@@ -139,11 +144,72 @@ public sealed class RagPipeline : IRagPipeline
         }
 
         var prompt = PromptBuilder.BuildRagPrompt(question, sources);
-        var completionResult = await _chatClient.CompleteAsync(prompt, ct);
-        if (!completionResult.IsSuccess)
-            return ChainResult<RagAnswer>.Failure(completionResult.Error);
+        var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
+        var chatResult = await _chatModel.ChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct);
+        if (!chatResult.IsSuccess)
+            return ChainResult<RagAnswer>.Failure(chatResult.Error);
 
         _logger.LogInformation("AskAsync returning {Count} source(s)", sources.Count);
-        return ChainResult<RagAnswer>.Success(new RagAnswer(completionResult.Value, sources));
+        return ChainResult<RagAnswer>.Success(new RagAnswer(chatResult.Value.Content, sources));
+    }
+
+    /// <summary>
+    /// Streams answer tokens for <paramref name="question"/> via: Embed → Search → BuildPrompt → StreamChatAsync.
+    /// On any pre-stream failure, yields a single <c>[ERROR:Code] message</c> token and stops. Never throws.
+    /// </summary>
+    /// <param name="question">User question.</param>
+    /// <param name="topK">Number of chunks to retrieve.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async IAsyncEnumerable<string> AskStreamAsync(
+        string question,
+        int topK = 5,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            yield return "[ERROR:InvalidInput] question must not be null or whitespace.";
+            yield break;
+        }
+
+        if (topK < 1)
+        {
+            yield return "[ERROR:InvalidInput] topK must be >= 1.";
+            yield break;
+        }
+
+        _logger.LogInformation("Embedding question for streaming retrieval");
+        var embedResult = await _embeddingModel.EmbedAsync(question, ct);
+        if (!embedResult.IsSuccess)
+        {
+            _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+            yield return $"[ERROR:{embedResult.Error.Code}] {embedResult.Error.Message}";
+            yield break;
+        }
+
+        _logger.LogDebug("Searching vector store topK={TopK}", topK);
+        var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
+        if (!searchResult.IsSuccess)
+        {
+            _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
+            yield return $"[ERROR:{searchResult.Error.Code}] {searchResult.Error.Message}";
+            yield break;
+        }
+
+        var sources = searchResult.Value;
+        if (sources.Count == 0)
+        {
+            _logger.LogWarning("No relevant sources found for streaming question.");
+            yield return "[ERROR:NotFound] No relevant context found for the question.";
+            yield break;
+        }
+
+        var prompt = PromptBuilder.BuildRagPrompt(question, sources);
+        var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
+
+        _logger.LogInformation("Streaming answer for question");
+        await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
+        {
+            yield return token;
+        }
     }
 }

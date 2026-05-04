@@ -42,6 +42,34 @@ public sealed class KnowledgeController : ControllerBase
         return MapError(result.Error.Code, result.Error.Message);
     }
 
+    /// <summary>
+    /// Streams answer tokens as Server-Sent Events.
+    /// Each token is sent as <c>data: {token}\n\n</c>; completion is signalled with <c>data: [DONE]\n\n</c>.
+    /// </summary>
+    [HttpPost("ask/stream")]
+    public async Task AskStreamAsync([FromBody] AskRequest request, CancellationToken ct)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        try
+        {
+            await foreach (var token in _pipeline.AskStreamAsync(request.Question, request.TopK, ct))
+            {
+                await Response.WriteAsync($"data: {token}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            await Response.WriteAsync("data: [DONE]\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal client disconnect — no further writes needed.
+        }
+    }
+
     private IActionResult MapError(string code, string message)
     {
         var body = new ErrorResponse(code, message);

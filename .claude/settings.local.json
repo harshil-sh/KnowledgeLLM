@@ -19,7 +19,13 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(dotnet script *)",
       "Bash(dotnet-ildasm WeaveLLM.Core.dll)",
-      "Bash(python3 -c \"import subprocess; r = subprocess.run\\(['ildasm', 'WeaveLLM.Core.dll'], capture_output=True, text=True\\); print\\(r.stdout[:2000]\\)\")"
+      "Bash(python3 -c \"import subprocess; r = subprocess.run\\(['ildasm', 'WeaveLLM.Core.dll'], capture_output=True, text=True\\); print\\(r.stdout[:2000]\\)\")",
+      "Bash(dotnet add *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(ls \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\\")",
+      "PowerShell(ls \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\0.1.0-alpha\\\\\" -Recurse | Select-Object -ExpandProperty FullName)",
+      "PowerShell($assembly = [System.Reflection.Assembly]::LoadFile\\(\"$env:USERPROFILE\\\\.nuget\\\\packages\\\\weavellm.providers\\\\0.1.0-alpha\\\\lib\\\\net8.0\\\\WeaveLLM.Providers.dll\"\\); $assembly.GetTypes\\(\\) | Select-Object FullName, IsInterface | Sort-Object IsInterface -Descending)",
+      "PowerShell(grep *)"
     ]
   }
 }

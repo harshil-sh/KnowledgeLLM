@@ -8,6 +8,8 @@ using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using IChatModel = WeaveLLM.Core.Providers.IChatModel;
+using WeaveLLM.Providers.OpenAI;
 
 namespace KnowledgeLLM.Core.Extensions;
 
@@ -52,7 +54,17 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IVectorStore, InMemoryVectorStore>();
         services.AddSingleton<IEmbeddingModel, OpenAIEmbeddingModel>();
-        services.AddSingleton<OpenAIChatClient>();
+        services.AddSingleton<IChatModel>(sp =>
+        {
+            var opts = sp.GetRequiredService<IOptions<KnowledgeLLMOptions>>().Value;
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var httpClient = httpClientFactory.CreateClient("openai-chat");
+            return new OpenAIChatModel(
+                opts.OpenAI.ApiKey,
+                opts.OpenAI.ChatModel,
+                "https://api.openai.com/v1/",
+                httpClient);
+        });
         services.AddScoped<IRagPipeline, RagPipeline>();
 
         return services;

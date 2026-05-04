@@ -7,6 +7,10 @@ using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using WeaveLLM.Core.Models;
+using IChatModel = WeaveLLM.Core.Providers.IChatModel;
+using LLMMessage = WeaveLLM.Core.Providers.Message;
+using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
+using MessageRole = WeaveLLM.Core.Providers.MessageRole;
 using Xunit;
 
 namespace KnowledgeLLM.Core.Tests.Pipeline;
@@ -17,7 +21,7 @@ public sealed class RagPipelineTests
     private readonly ITextChunker _chunker = Substitute.For<ITextChunker>();
     private readonly IEmbeddingModel _embedder = Substitute.For<IEmbeddingModel>();
     private readonly IVectorStore _store = Substitute.For<IVectorStore>();
-    private readonly OpenAIChatClient _chatClient = Substitute.For<OpenAIChatClient>();
+    private readonly IChatModel _chatClient = Substitute.For<IChatModel>();
     private readonly RagPipeline _sut;
 
     public RagPipelineTests()
@@ -199,8 +203,8 @@ public sealed class RagPipelineTests
                  .Returns(ChainResult<float[]>.Success(new[] { 1f, 0f }));
         _store.SearchAsync(Arg.Any<float[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
               .Returns(ChainResult<IReadOnlyList<RetrievalResult>>.Success(sources));
-        _chatClient.CompleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                   .Returns(ChainResult<string>.Success(expectedAnswer));
+        _chatClient.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
+                   .Returns(ChainResult<LLMMessage>.Success(new LLMMessage { Role = MessageRole.Assistant, Content = expectedAnswer }));
 
         var result = await _sut.AskAsync("question?", 5, CancellationToken.None);
 

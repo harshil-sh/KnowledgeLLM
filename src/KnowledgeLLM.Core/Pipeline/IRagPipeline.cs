@@ -15,4 +15,14 @@ public interface IRagPipeline
     /// <param name="topK">Number of chunks to retrieve.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<ChainResult<RagAnswer>> AskAsync(string question, int topK, CancellationToken ct);
+
+    /// <summary>
+    /// Streams answer tokens for <paramref name="question"/> by retrieving the top-<paramref name="topK"/> relevant chunks.
+    /// Yields response tokens as they arrive. On any pre-stream failure, yields a single error token and stops.
+    /// Never throws.
+    /// </summary>
+    /// <param name="question">User question.</param>
+    /// <param name="topK">Number of chunks to retrieve.</param>
+    /// <param name="ct">Cancellation token.</param>
+    IAsyncEnumerable<string> AskStreamAsync(string question, int topK = 5, CancellationToken ct = default);
 }
