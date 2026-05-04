@@ -1,6 +1,6 @@
 # KnowledgeLLM — Project Knowledge Base
 
-> Last updated: 04 May 2026 (WeaveLLM feedback sweep — L-9 added, error-code case inconsistency documented)
+> Last updated: 04 May 2026 (WeaveLLM feedback sweep — L-9 added, error-code case inconsistency documented; L-10 added after Phase 4 implementation)
 > Single source of truth for project context, architecture, and conventions.
 
 ---
@@ -482,7 +482,63 @@ Either way, standardise on one casing across the entire package and document it 
 
 ---
 
-## 3. Non-Negotiable Code Conventions
+### L-10 — `WeaveLLMError` only provides factory methods for validation errors; all operational error codes are unconstrained strings
+
+**Severity:** Medium — typo-prone, no type safety, inconsistent naming across the codebase  
+**Discovered in:** Phase 2 (`OpenAIEmbeddingModel`), Phase 4 (`PgVectorStore`, `PdfDocumentLoader`, `CompositeDocumentLoader`)
+
+**Problem:**  
+`WeaveLLMError` ships exactly two static factory methods: `InvalidInput(msg)` and `InvalidConfiguration(msg)`.
+All other error codes — `"Cancelled"`, `"ProviderError"`, `"NotFound"`, `"AUTHENTICATION_FAILED"`,
+`"RATE_LIMIT_EXCEEDED"`, `"NETWORK_TIMEOUT"` — must be expressed as raw string literals in
+`new WeaveLLMError(msg, "code-string", ex)`.
+
+This creates three compounding problems:
+
+1. **No type safety** — a single typo (`"Cancelled"` vs `"CANCELLED"`) compiles cleanly but
+   routes to the wrong HTTP status at runtime, with no warning.
+2. **No discoverability** — developers reading the interface cannot tell what codes the package
+   expects, nor which ones its implementations may produce.
+3. **No consistency** — across six components in this project the same concept ("operation was
+   cancelled") is spelled differently because there is no canonical source of truth.
+
+**Confirmed by (within this project):**
+
+| File | Code string used | Casing |
+|---|---|---|
+| `PdfDocumentLoader.cs` | `"Cancelled"` | PascalCase |
+| `PlainTextDocumentLoader.cs` | `"Cancelled"` | PascalCase |
+| `PgVectorStore.cs` | `"CANCELLED"` | SCREAMING_SNAKE_CASE |
+| `OpenAIEmbeddingModel.cs` | `"CANCELLED"` | SCREAMING_SNAKE_CASE |
+| `PdfDocumentLoader.cs` | `"ProviderError"` | PascalCase |
+| `PgVectorStore.cs` | `"PROVIDER_ERROR"` | SCREAMING_SNAKE_CASE |
+
+The inconsistency is a direct consequence of there being no authoritative factory for these codes.
+
+**Impact:**  
+- `KnowledgeController.MapError` may silently route the wrong HTTP status for cancellation and
+  provider errors depending on which component raised them
+- Refactoring an error code (e.g. standardising `"Cancelled"` → `"CANCELLED"`) requires a
+  grep-and-replace across the entire consumer project with no compiler safety net
+- Every new component author must study existing files to infer the "right" casing convention,
+  and the current files give contradictory signals
+
+**Suggested fix (options):**  
+a) Add static factory methods for every standard operational error code:
+```csharp
+WeaveLLMError.NotFound(msg)              // → "NOT_FOUND"
+WeaveLLMError.Cancelled(msg, ex?)        // → "CANCELLED"
+WeaveLLMError.ProviderError(msg, ex?)    // → "PROVIDER_ERROR"
+WeaveLLMError.AuthenticationFailed(msg)  // → "AUTHENTICATION_FAILED"
+WeaveLLMError.RateLimitExceeded(msg)     // → "RATE_LIMIT_EXCEEDED"
+WeaveLLMError.NetworkTimeout(msg, ex?)   // → "NETWORK_TIMEOUT"
+```
+b) Alternatively, ship a `WellKnownErrorCodes` static class so callers can write
+`new WeaveLLMError(msg, WellKnownErrorCodes.Cancelled, ex)` without guessing casing.  
+Either way, all factory methods and constants must use the **same casing** (SCREAMING_SNAKE_CASE
+preferred as it matches the existing `InvalidInput` output) and be documented in the README.
+
+---
 
 These apply to every file in this repo, no exceptions:
 
