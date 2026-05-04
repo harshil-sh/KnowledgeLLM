@@ -321,7 +321,10 @@ prompts as strings and pass them through, neither method feels naturally discove
 **Suggested fix (options):**  
 a) Add a separate `IStreamingChatModel` interface (`StreamAsync(string, LLMOptions, ct)` → `IAsyncEnumerable<string>`)
 for projects that only need streaming. `OpenAIChatModel` can implement both.  
-b) At minimum, add a prominent XML doc on `IChatModel` noting it covers both blocking (`ChatAsync`)
+b) Promote `StreamCompleteAsync(string prompt, LLMOptions, ct)` (currently only on the base `ILanguageModel`)
+as a first-class method on `IChatModel`, and document when to prefer it over `StreamChatAsync`. Projects
+building single-turn RAG prompts as plain strings shouldn't need to construct a `Message` list.  
+c) At minimum, add a prominent XML doc on `IChatModel` noting it covers both blocking (`ChatAsync`)
 and streaming (`StreamChatAsync`) in one interface.
 
 ---
