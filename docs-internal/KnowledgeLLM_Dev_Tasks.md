@@ -641,6 +641,30 @@ Update CLAUDE.md to reflect the completed project state:
 
 ---
 
+## WeaveLLM Package Feedback
+
+### 0.2.0-alpha upgrade — 07 May 2026
+
+- **`Message`, `LLMOptions` moved to `WeaveLLM.Core.Models`** — the `WeaveLLM.Core.Providers` namespace no longer exports these types. Any alias pointing to `WeaveLLM.Core.Providers.Message` or `WeaveLLM.Core.Providers.LLMOptions` breaks at compile time. Updated all aliases to `WeaveLLM.Core.Models.*` across `RagPipeline.cs` and all three test files.
+- **`MessageRole` renamed to `WeaveLLM.Core.Models.Role`** — the old `WeaveLLM.Core.Providers.MessageRole` enum no longer exists. New preferred API is the `Message.User(content)` static factory method (avoids the enum entirely).
+- **`IChatModel.ChatAsync` return type changed to `ChainResult<ChatResponse>`** — was `ChainResult<Message>`. `ChatResponse` has a `.Content string` property (same as `Message`), so the call site `chatResult.Value.Content` still compiles. NSubstitute mocks in tests must be updated from `ChainResult<LLMMessage>` to `ChainResult<ChatResponse>`.
+- **`WeaveLLM.Core.Models.IEmbeddingModel` now conflicts in more files** — importing `using WeaveLLM.Core.Models;` (needed for `ChainResult<T>`) now pulls in `WeaveLLM.Core.Models.IEmbeddingModel`, causing CS0104 in any file that also has `using KnowledgeLLM.Core.Embeddings;`. Fix: replace the `using KnowledgeLLM.Core.Embeddings;` directive with an explicit alias `using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;`.
+- **`Microsoft.Extensions.*` dependencies bumped to 9.0.x** — `WeaveLLM.Core 0.2.0-alpha` and `WeaveLLM.Providers 0.2.0-alpha` require `Microsoft.Extensions.DependencyInjection.Abstractions >= 9.0.0`, `Logging.Abstractions >= 9.0.0`, and `Http >= 9.0.0`. Our pinned 8.x versions triggered NU1605 (downgrade detected, treated as error). Updated all three to `9.0.0` in `KnowledgeLLM.Core.csproj`.
+
+### L-1 resolution verification — 08 May 2026
+
+- **`WeaveLLM.Core.Providers.IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings`** — No code changes required. All four affected files (`RagPipeline.cs`, `RagPipelineTests.cs`, `RagPipelineIntegrationTests.cs`, `ServiceCollectionExtensions.cs`) already alias `IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel` (our own interface) — the WeaveLLM-internal move has zero impact on the call sites. `dotnet build` passes with 0 errors.
+- **Step 2 check (bare `using WeaveLLM.Core.Providers;`)** — A bare `using WeaveLLM.Core.Providers;` no longer causes CS0104 from the `IEmbeddingModel` collision in that namespace. Aliases are kept for clarity. Whether `WeaveLLM.Core.Models.IEmbeddingModel` has also been removed is not yet verified; the existing explicit-alias pattern is safe either way.
+- **CLAUDE.md updated** — Convention note updated: the specific CS0104 risk from `WeaveLLM.Core.Providers` is resolved; correct fully-qualified alias paths are now documented inline.
+
+### WeaveLLMError factory-method migration — 07 May 2026
+
+- **Migrated all `new WeaveLLMError(...)` manual constructions to factory methods** — `InMemoryVectorStore`, `RagPipeline`, `PdfDocumentLoader`, `PlainTextDocumentLoader`, `PgVectorStore`, and `CompositeDocumentLoader` now all call `WeaveLLMError.NotFound()`, `WeaveLLMError.Cancelled(msg, ex)`, and `WeaveLLMError.ProviderError(provider, msg, ex)`. The entire codebase is now consistently SCREAMING_SNAKE_CASE. Resolves L-10.
+- **Updated `KnowledgeController.MapError` to SCREAMING_SNAKE_CASE** — changed `"InvalidInput" or "InvalidConfiguration" or "NotFound"` to `"INVALID_INPUT" or "INVALID_CONFIGURATION" or "NOT_FOUND"`. HTTP 400/500 routing now aligns with factory method output across all components. Resolves L-9.
+- **Updated all test assertions** — `"NotFound"` → `"NOT_FOUND"`, `"Cancelled"` → `"CANCELLED"`, `"ProviderError"` → `"PROVIDER_ERROR"` across `InMemoryVectorStoreTests.cs`, `PgVectorStoreTests.cs`, `PdfDocumentLoaderTests.cs`, `PlainTextDocumentLoaderTests.cs`, and `CompositeDocumentLoaderTests.cs`. All 172 tests pass.
+
+---
+
 ## Rules for Running Claude Prompts
 
 1. **One prompt = one fresh Claude Code session.** Never continue from the previous session — start clean each time.

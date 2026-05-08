@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Configuration;
@@ -9,14 +10,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using IChatModel = WeaveLLM.Core.Providers.IChatModel;
-using WeaveLLM.Providers.OpenAI;
+using WeaveLLM.Extensions.DependencyInjection;
 
 namespace KnowledgeLLM.Core.Extensions;
 
 /// <summary>Extension methods for registering KnowledgeLLM services with the DI container.</summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>The <see cref="ActivitySource"/> name used for all pipeline traces.</summary>
+    public const string PipelineActivitySourceName = "KnowledgeLLM.Pipeline";
+
     /// <summary>
     /// Registers all KnowledgeLLM Core services, including configuration, named HTTP clients,
     /// embedding model, chat client, vector store, and pipeline.
@@ -34,15 +37,9 @@ public static class ServiceCollectionExtensions
         services.Configure<KnowledgeLLMOptions>(
             configuration.GetSection(KnowledgeLLMOptions.SectionName));
 
-        services.AddHttpClient("openai-embeddings", (sp, client) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<KnowledgeLLMOptions>>().Value;
-            client.BaseAddress = new Uri("https://api.openai.com/v1/");
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", opts.OpenAI.ApiKey);
-        });
+        services.AddSingleton(new ActivitySource(PipelineActivitySourceName));
 
-        services.AddHttpClient("openai-chat", (sp, client) =>
+        services.AddHttpClient("openai-embeddings", (sp, client) =>
         {
             var opts = sp.GetRequiredService<IOptions<KnowledgeLLMOptions>>().Value;
             client.BaseAddress = new Uri("https://api.openai.com/v1/");
@@ -64,17 +61,16 @@ public static class ServiceCollectionExtensions
             return new InMemoryVectorStore();
         });
         services.AddSingleton<IEmbeddingModel, OpenAIEmbeddingModel>();
-        services.AddSingleton<IChatModel>(sp =>
-        {
-            var opts = sp.GetRequiredService<IOptions<KnowledgeLLMOptions>>().Value;
-            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var httpClient = httpClientFactory.CreateClient("openai-chat");
-            return new OpenAIChatModel(
-                opts.OpenAI.ApiKey,
-                opts.OpenAI.ChatModel,
-                "https://api.openai.com/v1/",
-                httpClient);
-        });
+
+        // WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha — L-2 + L-3 fix.
+        // Registers IChatModel backed by OpenAIChatModel via IHttpClientFactory (no raw HttpClient).
+        // Key mapping: WeaveLLM expects ApiKey (matches) and ModelId (our key is ChatModel —
+        // using string-param overload to avoid binding the mismatched config key name).
+        services.AddWeaveLLM()
+                .AddOpenAI(
+                    configuration["KnowledgeLLM:OpenAI:ApiKey"] ?? string.Empty,
+                    configuration["KnowledgeLLM:OpenAI:ChatModel"] ?? "gpt-4o-mini");
+
         services.AddScoped<IRagPipeline, RagPipeline>();
 
         return services;

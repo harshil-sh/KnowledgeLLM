@@ -1,6 +1,6 @@
 # KnowledgeLLM — Project Knowledge Base
 
-> Last updated: 04 May 2026 (WeaveLLM feedback sweep — L-9 added, error-code case inconsistency documented; L-10 added after Phase 4 implementation)
+> Last updated: 08 May 2026 (L-1 partial resolution — `WeaveLLM.Core.Providers.IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings`; no code changes needed; CLAUDE.md convention note updated)
 > Single source of truth for project context, architecture, and conventions.
 
 ---
@@ -13,14 +13,14 @@
 | **Description** | Ask questions across your documents — a RAG pipeline built on WeaveLLM.Core for .NET |
 | **Type** | Real application (not a sample, not a library) |
 | **Platform** | .NET 8 / C# |
-| **Core Dependency** | `WeaveLLM.Core 0.1.0-alpha` (NuGet — never ProjectReference) |
+| **Core Dependency** | `WeaveLLM.Core 0.2.0-alpha` (NuGet — never ProjectReference) |
 | **Current Stage** | Phase 4 in progress (4-A done) |
 
 ---
 
 ## 2. Dependency: WeaveLLM.Core
 
-Published at: https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha
+Published at: https://www.nuget.org/packages/WeaveLLM.Core/0.2.0-alpha
 
 ### Key types used in KnowledgeLLM
 
@@ -30,91 +30,94 @@ Published at: https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha
 | `WeaveLLMError` | Structured error. Properties: `.Code string`, `.Message string`. Factory: `WeaveLLMError.InvalidInput(msg)`. Constructor: `new WeaveLLMError(string msg, string code, Exception? inner = null)`. |
 | `IChain<TIn,TOut>` | `ExecuteAsync(TIn, CancellationToken) → Task<ChainResult<TOut>>` |
 
-### WeaveLLM ecosystem packages (all 0.1.0-alpha)
+### WeaveLLM ecosystem packages (all 0.2.0-alpha)
 
 ```
 WeaveLLM.Core                              ← used now (models, ChainResult, error types)
 WeaveLLM.Providers                         ← used now (OpenAIChatModel — Phase 3+)
 WeaveLLM.Memory                            ← not used — Phase 4 uses Npgsql + pgvector directly
 WeaveLLM.Observability                     ← OpenTelemetry (Phase 4)
-WeaveLLM.Extensions.DependencyInjection    ← fluent DI builder (not yet available)
+WeaveLLM.Extensions.DependencyInjection    ← fluent DI builder (0.2.0-alpha now published)
 ```
 
 ---
 
 ## 2-B. WeaveLLM Package: Discovered API Reference
 
-> Learned during Phase 3 (tasks 3-A and 3-B) by reflecting the DLLs directly.
+> Learned during Phase 3 (tasks 3-A, 3-B) and updated for 0.2.0-alpha (07 May 2026) by reflecting the DLLs directly.
 > Read this section before touching any WeaveLLM type to avoid repeating the same mistakes.
 
-### Package layout — interfaces vs. implementations
+### Package layout — interfaces vs. implementations (0.2.0-alpha)
 
 | Package | What it contains |
 |---|---|
-| `WeaveLLM.Core` | `ChainResult<T>`, `WeaveLLMError`, core models |
-| `WeaveLLM.Core.Providers` (namespace inside `WeaveLLM.Core.dll`) | All provider **interfaces**: `IChatModel`, `ILanguageModel`, `IEmbeddingModel`, `LLMOptions`, `Message`, `MessageRole` |
+| `WeaveLLM.Core` | `ChainResult<T>`, `WeaveLLMError`, `ChatResponse`, `Message`, `LLMOptions`, `Role` (all in `WeaveLLM.Core.Models`) |
+| `WeaveLLM.Core.Providers` (namespace inside `WeaveLLM.Core.dll`) | Provider **interfaces** only: `IChatModel`, `ILanguageModel`, `IStreamingChatModel` — `IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings` (L-1 fix) |
+| `WeaveLLM.Core.Providers.Embeddings` | `IEmbeddingModel` — new canonical location as of L-1 fix |
 | `WeaveLLM.Providers` | Concrete implementations only: `OpenAIChatModel`, `AnthropicChatModel` |
 
-`WeaveLLM.Providers` ships **no interfaces** — every interface lives in `WeaveLLM.Core`.
+**Breaking change from 0.1.0-alpha:** `Message`, `LLMOptions`, and `MessageRole` moved from `WeaveLLM.Core.Providers` into `WeaveLLM.Core.Models`. `MessageRole` was renamed to `Role`.
 
-### Full interface inventory (`WeaveLLM.Core.Providers` namespace)
+### Full interface inventory (0.2.0-alpha)
 
-| Type | Kind | Key members |
-|---|---|---|
-| `IChatModel` | Interface | `ChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → Task<ChainResult<Message>>`<br>`StreamChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → IAsyncEnumerable<string>` |
-| `ILanguageModel` | Interface (base of `IChatModel`) | `CompleteAsync(string, LLMOptions, ct) → Task<ChainResult<string>>`<br>`StreamCompleteAsync(string, LLMOptions, ct) → IAsyncEnumerable<string>`<br>`CountTokensAsync(string, ct) → Task<int>`<br>`ProviderName`, `ModelId` properties |
-| `IEmbeddingModel` | Interface | ⚠️ name collides with project's own — see below |
-| `LLMOptions` | Class | `Temperature double?`, `TopP double?`, `MaxTokens int?`, `StopSequences`, `FrequencyPenalty double?`, `PresencePenalty double?`, `Seed int?`, `ResponseFormat string`, `ProviderSpecific Dictionary<string,object>` |
-| `Message` | Class | `Role MessageRole`, `Content string`, `Name string`, `ToolCalls`, `ToolCallId string`, `Timestamp DateTimeOffset` |
-| `MessageRole` | Enum | `System`, `User`, `Assistant`, `Tool` |
+| Type | Namespace | Kind | Key members |
+|---|---|---|---|
+| `IChatModel` | `WeaveLLM.Core.Providers` | Interface | `ChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → Task<ChainResult<ChatResponse>>`<br>`StreamChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → IAsyncEnumerable<string>` |
+| `ILanguageModel` | `WeaveLLM.Core.Providers` | Interface (base of `IChatModel`) | `CompleteAsync(string, LLMOptions, ct) → Task<ChainResult<string>>`<br>`StreamCompleteAsync(string, LLMOptions, ct) → IAsyncEnumerable<string>` |
+| `IEmbeddingModel` | `WeaveLLM.Core.Providers` AND `WeaveLLM.Core.Models` | Interface | ⚠️ exists in TWO namespaces — see collision note below |
+| `LLMOptions` | `WeaveLLM.Core.Models` | Class | `Temperature double?`, `MaxTokens int?`, `StopSequences`, `ProviderSpecific Dictionary<string,object>` (moved from `WeaveLLM.Core.Providers` in 0.2.0) |
+| `Message` | `WeaveLLM.Core.Models` | Class | `Role Role`, `Content string`, static factories: `Message.User(content)`, `Message.System(content)`, `Message.Assistant(content)` (moved from `WeaveLLM.Core.Providers` in 0.2.0) |
+| `Role` | `WeaveLLM.Core.Models` | Enum | `System`, `User`, `Assistant`, `Tool` (renamed from `MessageRole` in 0.2.0) |
+| `ChatResponse` | `WeaveLLM.Core.Models` | Class | `Content string`, `FinishReason string`, `Usage UsageStats`, `ToolCalls IReadOnlyList<ToolCall>` (NEW in 0.2.0 — replaces `Message` as `ChatAsync` return value) |
 
-`OpenAIChatModel` (`WeaveLLM.Providers.OpenAI`) and `AnthropicChatModel` (`WeaveLLM.Providers.Anthropic`) both implement `IChatModel` and `ILanguageModel`.
+### Namespace collision status — `WeaveLLM.Core.Providers` risk resolved (L-1 partial fix)
 
-### CRITICAL: Namespace collision — never `using WeaveLLM.Core.Providers;`
+`WeaveLLM.Core.Providers.IEmbeddingModel` has been **removed** from the `WeaveLLM.Core.Providers` namespace and relocated to `WeaveLLM.Core.Providers.Embeddings`. A bare `using WeaveLLM.Core.Providers;` no longer produces CS0104 from that specific collision.
 
-`WeaveLLM.Core.Providers` exports its own `IEmbeddingModel`. Adding a bare
-`using WeaveLLM.Core.Providers;` in any file that also uses
-`KnowledgeLLM.Core.Embeddings.IEmbeddingModel` produces **CS0104 ambiguous reference**.
+`WeaveLLM.Core.Models.IEmbeddingModel` status is **unverified** in the updated package — until confirmed removed, keep the explicit `IEmbeddingModel` alias to guard against a potential `using WeaveLLM.Core.Models;` collision.
 
-**Rule: never open the namespace. Always use type aliases for every WeaveLLM.Core.Providers type.**
+**Rule: keep type aliases in all files that reference WeaveLLM types.**
 
 ```csharp
-// Required in every file that uses WeaveLLM chat/language types
-using IChatModel    = WeaveLLM.Core.Providers.IChatModel;
-using LLMMessage    = WeaveLLM.Core.Providers.Message;
-using LLMOptions    = WeaveLLM.Core.Providers.LLMOptions;
-using MessageRole   = WeaveLLM.Core.Providers.MessageRole;
+// Active alias pattern (L-1 partial fix applied — WeaveLLM.Core.Providers collision resolved)
+using IChatModel      = WeaveLLM.Core.Providers.IChatModel;
+using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;  // still required while WeaveLLM.Core.Models.IEmbeddingModel status unverified
+using LLMMessage      = WeaveLLM.Core.Models.Message;
+using LLMOptions      = WeaveLLM.Core.Models.LLMOptions;
+// MessageRole alias removed — use LLMMessage.User(prompt) factory instead
+
+// If you ever need WeaveLLM's own embedding interface, use the canonical location:
+// using IWeaveLLMEmbeddingModel = WeaveLLM.Core.Providers.Embeddings.IEmbeddingModel;
 ```
 
-Applies to: `RagPipeline.cs`, `ServiceCollectionExtensions.cs`, every test file that mocks `IChatModel`.
+Drop the `IEmbeddingModel` alias only when WeaveLLM confirms `WeaveLLM.Core.Models.IEmbeddingModel` is also removed. See L-1.
 
-### `IChatModel.ChatAsync` returns `ChainResult<Message>`, not `ChainResult<string>`
+Applies to: `RagPipeline.cs`, and the three `RagPipeline*Tests.cs` files. `ServiceCollectionExtensions.cs` does not open `WeaveLLM.Core.Models` so it can safely use `using KnowledgeLLM.Core.Embeddings;` directly.
 
-Extract the answer string from `result.Value.Content`. Always check `IsSuccess` first.
+### `IChatModel.ChatAsync` returns `ChainResult<ChatResponse>`, not `ChainResult<Message>`
+
+**Breaking change from 0.1.0-alpha.** `ChatResponse.Content` still returns the answer string.
 
 ```csharp
-var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
+var messages = new List<LLMMessage> { LLMMessage.User(prompt) };   // ← factory method, no MessageRole needed
 var chatResult = await _chatModel.ChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct);
 if (!chatResult.IsSuccess)
     return ChainResult<RagAnswer>.Failure(chatResult.Error);
 return ChainResult<RagAnswer>.Success(new RagAnswer(chatResult.Value.Content, sources));
 ```
 
-### Streaming — `IChatModel.StreamChatAsync` (no separate `IStreamingChatModel`)
-
-There is **no `IStreamingChatModel` interface**. Streaming is built directly into `IChatModel`:
-
+NSubstitute mocks must now return `ChainResult<ChatResponse>`:
 ```csharp
-IAsyncEnumerable<string> StreamChatAsync(
-    IReadOnlyList<Message> messages,
-    LLMOptions options,
-    CancellationToken cancellationToken);
+_chatModel.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
+          .Returns(ChainResult<ChatResponse>.Success(new ChatResponse { Content = "answer" }));
 ```
 
-Takes a fully-constructed message list. If your input is a raw prompt string, wrap it:
+### Streaming — `IChatModel.StreamChatAsync` (no separate `IStreamingChatModel`)
+
+Unchanged from 0.1.0-alpha. Streaming is built directly into `IChatModel`:
 
 ```csharp
-var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
+var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
 await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct)
                                       .WithCancellation(ct))
 {
@@ -122,8 +125,7 @@ await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions 
 }
 ```
 
-`ILanguageModel.StreamCompleteAsync(string, LLMOptions, ct)` also exists and accepts a raw string
-directly — use it for single-turn, non-chat flows where you have a plain prompt.
+`ILanguageModel.StreamCompleteAsync(string, LLMOptions, ct)` also exists for single-turn plain-string flows.
 
 ### `OpenAIChatModel` constructor takes a concrete `HttpClient`, not `IHttpClientFactory`
 
@@ -148,18 +150,18 @@ services.AddSingleton<IChatModel>(sp =>
 
 The actual error type is `WeaveLLMError` (namespace `WeaveLLM.Core.Models`), not `ChainError`.
 
-**Two code-string conventions exist and are NOT interchangeable:**
+**All error codes are SCREAMING_SNAKE_CASE — use factory methods exclusively:**
 
 | Source | Code style | Example |
 |---|---|---|
 | `WeaveLLMError` static factory methods | SCREAMING_SNAKE_CASE | `WeaveLLMError.InvalidInput(msg)` → `"INVALID_INPUT"` |
-| Manual `new WeaveLLMError(msg, code, ex?)` | Whatever string you pass | `new WeaveLLMError(msg, "NotFound", null)` → `"NotFound"` |
+| `WeaveLLMError.NotFound(msg)` | SCREAMING_SNAKE_CASE | `"NOT_FOUND"` |
+| `WeaveLLMError.Cancelled(msg, ex)` | SCREAMING_SNAKE_CASE | `"CANCELLED"` |
+| `WeaveLLMError.ProviderError(provider, msg, ex)` | SCREAMING_SNAKE_CASE | `"PROVIDER_ERROR"` |
 
-The codebase is **inconsistent**: `OpenAIEmbeddingModel` uses factory methods (SCREAMING_SNAKE_CASE); `InMemoryVectorStore` and `RagPipeline` use manual construction with PascalCase.
+The entire codebase now uses factory methods consistently (SCREAMING_SNAKE_CASE throughout). `KnowledgeController.MapError` was updated to match (`"INVALID_INPUT"`, `"INVALID_CONFIGURATION"`, `"NOT_FOUND"`). L-9 and L-10 are resolved.
 
-⚠️ **Controller-vs-factory bug**: `KnowledgeController.MapError` checks for `"InvalidInput"`, `"InvalidConfiguration"`, `"NotFound"` (PascalCase). `WeaveLLMError.InvalidInput()` produces `"INVALID_INPUT"` (SCREAMING_SNAKE_CASE). This means factory-generated `InvalidInput` errors are sent as HTTP 500, not 400.
-
-**Rule going forward:** when manually constructing `new WeaveLLMError(...)`, use PascalCase codes to match what the controller checks. Reserve factory methods for cases where their code string is tolerable as a 500.
+**Rule:** never use `new WeaveLLMError(msg, "SomeCode", ex)` directly — always use a factory method.
 
 ### Mocking `IChatModel` in tests (NSubstitute)
 
@@ -199,23 +201,33 @@ chatModel.StreamChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptio
 ### L-1 — Namespace collision: `WeaveLLM.Core.Providers.IEmbeddingModel`
 
 **Severity:** High — breaks compilation on first import  
-**Discovered in:** Task 3-A
+**Discovered in:** Task 3-A  
+**Status:** **Providers collision resolved (08 May 2026)** — `WeaveLLM.Core.Providers.IEmbeddingModel` has been removed from the old namespace and relocated to `WeaveLLM.Core.Providers.Embeddings.IEmbeddingModel`. A bare `using WeaveLLM.Core.Providers;` no longer produces CS0104. `WeaveLLM.Core.Models.IEmbeddingModel` removal is **unverified** — full L-1 resolution requires confirming that namespace is also clean.
 
 **Problem:**  
-`WeaveLLM.Core.Providers` exports `IEmbeddingModel`. Any project that also defines its own
-embedding interface (a common pattern in layered architectures) cannot open this namespace
-without hitting CS0104. The only workaround is to never use `using WeaveLLM.Core.Providers;`
+`WeaveLLM.Core.Providers` exported `IEmbeddingModel`. Any project that also defines its own
+embedding interface (a common pattern in layered architectures) could not open this namespace
+without hitting CS0104. The only workaround was to never use `using WeaveLLM.Core.Providers;`
 and instead alias every type individually.
 
-**Impact:**  
-- Every file touching chat/language types needs boilerplate aliases
-- A developer's first instinct (`using WeaveLLM.Core.Providers;`) produces a compiler error
-- No IDE warning before the conflict hits build
+**Current status (08 May 2026):**
 
-**Suggested fix:**  
+| Fully qualified name | Status |
+|---|---|
+| `WeaveLLM.Core.Providers.IEmbeddingModel` | **Removed** — moved to `Embeddings` sub-namespace (L-1 fix) |
+| `WeaveLLM.Core.Providers.Embeddings.IEmbeddingModel` | **New canonical location** |
+| `WeaveLLM.Core.Models.IEmbeddingModel` | Status unverified — may still collide if `using WeaveLLM.Core.Models;` is opened |
+
+**Impact of the fix on KnowledgeLLM:**  
+Zero code changes required. All affected files already alias `IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel` and never open `WeaveLLM.Core.Providers` as a bare namespace. `dotnet build` passes with 0 errors before and after the package update.
+
+**Remaining action (when `WeaveLLM.Core.Models.IEmbeddingModel` removal is confirmed):**  
+- Replace `using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;` with `using KnowledgeLLM.Core.Embeddings;` in `RagPipeline.cs` and the 3 test files
+- If any file ever needs WeaveLLM's own embedding interface, use `using IWeaveLLMEmbeddingModel = WeaveLLM.Core.Providers.Embeddings.IEmbeddingModel;`
+
+**Suggested fix (original):**  
 Move `IEmbeddingModel` into a sub-namespace (`WeaveLLM.Core.Providers.Embeddings`) so the
-primary namespace only contains chat/LLM types. Projects that need the WeaveLLM embedding
-interface can opt into it explicitly, while those with their own `IEmbeddingModel` are unaffected.
+primary namespace only contains chat/LLM types — **done for `WeaveLLM.Core.Providers`; `WeaveLLM.Core.Models.IEmbeddingModel` removal still pending for full closure.**
 
 ---
 
@@ -469,10 +481,11 @@ to the end user — uses factory methods exclusively.
 - Error is silent — nothing in the pipeline logs the wrong status code mapping
 - Inconsistency between files makes it hard to predict what HTTP status any given error produces
 
-**Workaround (in use):**  
-Manually construct `new WeaveLLMError(msg, "NotFound", null)` with PascalCase codes where
-the HTTP status matters (e.g. in `InMemoryVectorStore`, `PgVectorStore`, `RagPipeline`).
-Avoid `WeaveLLMError.InvalidInput()` factory in code paths that reach the controller.
+**Resolved (07 May 2026):**  
+All production files (`InMemoryVectorStore`, `PgVectorStore`, `RagPipeline`, `PdfDocumentLoader`,
+`PlainTextDocumentLoader`, `CompositeDocumentLoader`) migrated to factory methods.
+`KnowledgeController.MapError` updated to check SCREAMING_SNAKE_CASE codes.
+All test assertions updated to match. 172/172 tests pass.
 
 **Suggested fix (two options):**  
 a) Update `KnowledgeController.MapError` to check SCREAMING_SNAKE_CASE codes to align with the factory methods:
@@ -502,18 +515,18 @@ This creates three compounding problems:
 3. **No consistency** — across six components in this project the same concept ("operation was
    cancelled") is spelled differently because there is no canonical source of truth.
 
-**Confirmed by (within this project):**
+**Resolved (07 May 2026):** All files now use factory methods exclusively — SCREAMING_SNAKE_CASE throughout:
 
-| File | Code string used | Casing |
+| File | Factory method used | Code produced |
 |---|---|---|
-| `PdfDocumentLoader.cs` | `"Cancelled"` | PascalCase |
-| `PlainTextDocumentLoader.cs` | `"Cancelled"` | PascalCase |
-| `PgVectorStore.cs` | `"CANCELLED"` | SCREAMING_SNAKE_CASE |
-| `OpenAIEmbeddingModel.cs` | `"CANCELLED"` | SCREAMING_SNAKE_CASE |
-| `PdfDocumentLoader.cs` | `"ProviderError"` | PascalCase |
-| `PgVectorStore.cs` | `"PROVIDER_ERROR"` | SCREAMING_SNAKE_CASE |
+| `PdfDocumentLoader.cs` | `WeaveLLMError.Cancelled(msg, ex)` | `"CANCELLED"` |
+| `PlainTextDocumentLoader.cs` | `WeaveLLMError.Cancelled(msg, ex)` | `"CANCELLED"` |
+| `PgVectorStore.cs` | `WeaveLLMError.Cancelled(msg, ex)` | `"CANCELLED"` |
+| `OpenAIEmbeddingModel.cs` | `WeaveLLMError.Cancelled(msg, ex)` | `"CANCELLED"` |
+| `PdfDocumentLoader.cs` | `WeaveLLMError.ProviderError("PdfPig", msg, ex)` | `"PROVIDER_ERROR"` |
+| `PgVectorStore.cs` | `WeaveLLMError.ProviderError("PostgreSQL", msg, ex)` | `"PROVIDER_ERROR"` |
 
-The inconsistency is a direct consequence of there being no authoritative factory for these codes.
+The inconsistency is eliminated. `KnowledgeController.MapError` now checks SCREAMING_SNAKE_CASE codes.
 
 **Impact:**  
 - `KnowledgeController.MapError` may silently route the wrong HTTP status for cancellation and
@@ -537,6 +550,39 @@ b) Alternatively, ship a `WellKnownErrorCodes` static class so callers can write
 `new WeaveLLMError(msg, WellKnownErrorCodes.Cancelled, ex)` without guessing casing.  
 Either way, all factory methods and constants must use the **same casing** (SCREAMING_SNAKE_CASE
 preferred as it matches the existing `InvalidInput` output) and be documented in the README.
+
+---
+
+### L-11 — `WeaveLLM.Core 0.2.0-alpha` breaks compilation: three types moved namespace, one renamed, `ChatAsync` return type changed
+
+**Severity:** High — hard compile errors on upgrade; no deprecation warnings precede them  
+**Discovered in:** WeaveLLM 0.2.0-alpha upgrade (07 May 2026)
+
+**Problem:**  
+`WeaveLLM.Core 0.2.0-alpha` contains multiple co-located breaking changes with no deprecation bridge:
+
+1. `WeaveLLM.Core.Providers.Message` → moved to `WeaveLLM.Core.Models.Message`
+2. `WeaveLLM.Core.Providers.LLMOptions` → moved to `WeaveLLM.Core.Models.LLMOptions`
+3. `WeaveLLM.Core.Providers.MessageRole` → renamed and moved to `WeaveLLM.Core.Models.Role`
+4. `IChatModel.ChatAsync` return type changed from `ChainResult<Message>` to `ChainResult<ChatResponse>`
+5. `Microsoft.Extensions.*` minimum versions bumped to 9.0.0 (from 8.x), triggering NU1605 downgrade errors
+
+All five changes hit simultaneously on package version bump with no runtime fallback, no `[Obsolete]` attributes, and no migration notes in the package README.
+
+**Impact:**  
+- Every file using WeaveLLM chat types had hard compile errors — `RagPipeline.cs`, `ServiceCollectionExtensions.cs`, and all three test files
+- The `Microsoft.Extensions.*` bump requires explicit package version updates in consumer projects (NU1605 is treated as an error by default in this solution)
+- Tests mocking `ChatAsync` must be updated from `ChainResult<LLMMessage>` to `ChainResult<ChatResponse>` — a type-level change not caught until build
+- The `WeaveLLM.Core.Models.IEmbeddingModel` now appears in a second namespace, worsening the existing CS0104 collision (L-1) — any file with `using WeaveLLM.Core.Models;` now requires the `IEmbeddingModel` alias even if it wasn't needed before
+
+**Workaround (applied):**  
+- Updated type aliases to `WeaveLLM.Core.Models.*` namespaces across all affected files
+- Added `using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;` alias and removed bare `using KnowledgeLLM.Core.Embeddings;` in affected files
+- Replaced `new LLMMessage { Role = MessageRole.User, Content = prompt }` initialiser pattern with `LLMMessage.User(prompt)` factory (avoids the `Role` enum entirely)
+- Updated `Microsoft.Extensions.*` pins to `9.0.0` in `KnowledgeLLM.Core.csproj`
+
+**Suggested fix:**  
+Provide a `#pragma warning` shim release (a 0.1.x patch) that re-exports renamed types as `[Obsolete]` aliases pointing to the new locations, allowing consumer projects to migrate incrementally. Alternatively, commit to a proper semver major bump (1.0.0) for breaking API changes rather than using alpha patch increments.
 
 ---
 
@@ -783,10 +829,10 @@ data: [DONE]
 
 | `WeaveLLMError.Code` value (exact string) | HTTP Status |
 |---|---|
-| `"InvalidInput"`, `"InvalidConfiguration"`, `"NotFound"` | 400 |
-| All others (including `"INVALID_INPUT"` from factory methods) | 500 |
+| `"INVALID_INPUT"`, `"INVALID_CONFIGURATION"`, `"NOT_FOUND"` | 400 |
+| All others (`"CANCELLED"`, `"PROVIDER_ERROR"`, etc.) | 500 |
 
-⚠️ Factory-method-generated codes (`"INVALID_INPUT"`, `"PROVIDER_ERROR"`, etc.) are SCREAMING_SNAKE_CASE and do **not** match the controller's PascalCase checks — they map to 500. See L-9.
+All production code uses factory methods (SCREAMING_SNAKE_CASE). Controller updated to match. L-9 resolved.
 
 ---
 
@@ -794,11 +840,11 @@ data: [DONE]
 
 ### KnowledgeLLM.Core.csproj
 ```xml
-<PackageReference Include="WeaveLLM.Core" Version="0.1.0-alpha" />
-<PackageReference Include="WeaveLLM.Providers" Version="0.1.0-alpha" />
-<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
-<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-<PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+<PackageReference Include="WeaveLLM.Core" Version="0.2.0-alpha" />
+<PackageReference Include="WeaveLLM.Providers" Version="0.2.0-alpha" />
+<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
 <PackageReference Include="Npgsql" Version="8.0.5" />
 <PackageReference Include="Pgvector" Version="0.3.2" />
 ```
