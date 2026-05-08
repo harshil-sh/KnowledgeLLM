@@ -25,11 +25,11 @@ public sealed class SlidingWindowChunker : ITextChunker
     {
         if (_chunkSize < 1)
             return Task.FromResult(ChainResult<IReadOnlyList<TextChunk>>.Failure(
-                new WeaveLLMError("chunkSize must be >= 1.", "InvalidConfiguration", null)));
+                WeaveLLMError.InvalidConfiguration("chunkSize must be >= 1.")));
 
         if (_overlap >= _chunkSize)
             return Task.FromResult(ChainResult<IReadOnlyList<TextChunk>>.Failure(
-                new WeaveLLMError("overlap must be less than chunkSize.", "InvalidConfiguration", null)));
+                WeaveLLMError.InvalidConfiguration("overlap must be less than chunkSize.")));
 
         if (string.IsNullOrWhiteSpace(document?.Content))
             return Task.FromResult(ChainResult<IReadOnlyList<TextChunk>>.Failure(
@@ -44,7 +44,7 @@ public sealed class SlidingWindowChunker : ITextChunker
         {
             if (ct.IsCancellationRequested)
                 return Task.FromResult(ChainResult<IReadOnlyList<TextChunk>>.Failure(
-                    new WeaveLLMError("Operation was cancelled.", "Cancelled", null)));
+                    WeaveLLMError.Cancelled("Operation was cancelled.", null!)));
 
             var end = Math.Min(pos + _chunkSize, content.Length);
             var window = content[pos..end];

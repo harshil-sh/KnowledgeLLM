@@ -20,7 +20,7 @@ public sealed class SlidingWindowChunkerTests
         var result = await sut.ChunkAsync(doc, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("InvalidConfiguration");
+        result.Error.Code.Should().Be("INVALID_CONFIGURATION");
     }
 
     [Theory]
@@ -34,7 +34,7 @@ public sealed class SlidingWindowChunkerTests
         var result = await sut.ChunkAsync(doc, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("InvalidConfiguration");
+        result.Error.Code.Should().Be("INVALID_CONFIGURATION");
     }
 
     // --- InvalidInput ---
@@ -152,6 +152,6 @@ public sealed class SlidingWindowChunkerTests
         var result = await sut.ChunkAsync(doc, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 }
