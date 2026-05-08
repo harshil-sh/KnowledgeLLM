@@ -1,7 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
 using KnowledgeLLM.Core.Chunking;
-using KnowledgeLLM.Core.Embeddings;
 using KnowledgeLLM.Core.Pipeline;
 using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,8 +9,9 @@ using NSubstitute;
 using WeaveLLM.Core.Models;
 using Xunit;
 using IChatModel = WeaveLLM.Core.Providers.IChatModel;
-using LLMMessage = WeaveLLM.Core.Providers.Message;
-using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
+using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
+using LLMMessage = WeaveLLM.Core.Models.Message;
+using LLMOptions = WeaveLLM.Core.Models.LLMOptions;
 
 namespace KnowledgeLLM.Core.Tests.Pipeline;
 
@@ -29,7 +30,8 @@ public sealed class RagPipelineStreamingTests
             _embedder,
             _store,
             _chatModel,
-            NullLogger<RagPipeline>.Instance);
+            NullLogger<RagPipeline>.Instance,
+            new ActivitySource("test"));
     }
 
     private static TextChunk MakeChunk(string docId = "doc1", int idx = 0) =>
@@ -69,7 +71,7 @@ public sealed class RagPipelineStreamingTests
             tokens.Add(t);
 
         tokens.Should().HaveCount(1);
-        tokens[0].Should().StartWith("[ERROR:InvalidInput]");
+        tokens[0].Should().StartWith("[ERROR:INVALID_INPUT]");
     }
 
     [Theory]
@@ -82,7 +84,7 @@ public sealed class RagPipelineStreamingTests
             tokens.Add(t);
 
         tokens.Should().HaveCount(1);
-        tokens[0].Should().StartWith("[ERROR:InvalidInput]");
+        tokens[0].Should().StartWith("[ERROR:INVALID_INPUT]");
     }
 
     // --- propagates downstream errors as error tokens ---
@@ -92,7 +94,7 @@ public sealed class RagPipelineStreamingTests
     {
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                  .Returns(ChainResult<float[]>.Failure(
-                     new WeaveLLMError("embed fail", "PROVIDER_ERROR", null)));
+                     WeaveLLMError.ProviderError("mock", "embed fail")));
 
         var tokens = new List<string>();
         await foreach (var t in _sut.AskStreamAsync("question?", ct: CancellationToken.None))
@@ -110,7 +112,7 @@ public sealed class RagPipelineStreamingTests
                  .Returns(ChainResult<float[]>.Success(new[] { 1f, 0f }));
         _store.SearchAsync(Arg.Any<float[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
               .Returns(ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
-                  new WeaveLLMError("search fail", "PROVIDER_ERROR", null)));
+                  WeaveLLMError.ProviderError("mock", "search fail")));
 
         var tokens = new List<string>();
         await foreach (var t in _sut.AskStreamAsync("question?", ct: CancellationToken.None))
@@ -134,7 +136,7 @@ public sealed class RagPipelineStreamingTests
             tokens.Add(t);
 
         tokens.Should().HaveCount(1);
-        tokens[0].Should().StartWith("[ERROR:NotFound]");
+        tokens[0].Should().StartWith("[ERROR:NOT_FOUND]");
     }
 
     // --- success: yields all tokens in order ---

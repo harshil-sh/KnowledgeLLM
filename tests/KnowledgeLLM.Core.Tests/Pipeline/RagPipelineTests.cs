@@ -1,16 +1,17 @@
 using FluentAssertions;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Documents;
-using KnowledgeLLM.Core.Embeddings;
 using KnowledgeLLM.Core.Pipeline;
 using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using System.Diagnostics;
 using WeaveLLM.Core.Models;
 using IChatModel = WeaveLLM.Core.Providers.IChatModel;
-using LLMMessage = WeaveLLM.Core.Providers.Message;
-using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
-using MessageRole = WeaveLLM.Core.Providers.MessageRole;
+using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
+using LLMMessage = WeaveLLM.Core.Models.Message;
+using LLMOptions = WeaveLLM.Core.Models.LLMOptions;
+using MessageRole = WeaveLLM.Core.Models.Role;
 using Xunit;
 
 namespace KnowledgeLLM.Core.Tests.Pipeline;
@@ -26,7 +27,8 @@ public sealed class RagPipelineTests
 
     public RagPipelineTests()
     {
-        _sut = new RagPipeline(_loader, _chunker, _embedder, _store, _chatClient, NullLogger<RagPipeline>.Instance);
+        _sut = new RagPipeline(_loader, _chunker, _embedder, _store, _chatClient,
+            NullLogger<RagPipeline>.Instance, new ActivitySource("test"));
     }
 
     // helpers
@@ -56,12 +58,12 @@ public sealed class RagPipelineTests
     {
         _loader.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                .Returns(ChainResult<IReadOnlyList<Document>>.Failure(
-                   new WeaveLLMError("not found", "NotFound", null)));
+                   WeaveLLMError.NotFound("not found")));
 
         var result = await _sut.IndexAsync("path", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     [Fact]
@@ -89,12 +91,12 @@ public sealed class RagPipelineTests
                 .Returns(ChainResult<IReadOnlyList<TextChunk>>.Success(new[] { MakeChunk() }));
         _embedder.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                  .Returns(ChainResult<IReadOnlyList<float[]>>.Failure(
-                     new WeaveLLMError("embed error", "ProviderError", null)));
+                     WeaveLLMError.ProviderError("mock", "embed error")));
 
         var result = await _sut.IndexAsync("path", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     [Fact]
@@ -107,12 +109,12 @@ public sealed class RagPipelineTests
         _embedder.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
                  .Returns(ChainResult<IReadOnlyList<float[]>>.Success(new[] { new[] { 1f, 0f } }));
         _store.UpsertAsync(Arg.Any<IReadOnlyList<TextChunk>>(), Arg.Any<IReadOnlyList<float[]>>(), Arg.Any<CancellationToken>())
-              .Returns(ChainResult<int>.Failure(new WeaveLLMError("upsert fail", "ProviderError", null)));
+              .Returns(ChainResult<int>.Failure(WeaveLLMError.ProviderError("mock", "upsert fail")));
 
         var result = await _sut.IndexAsync("path", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     [Fact]
@@ -167,12 +169,12 @@ public sealed class RagPipelineTests
     public async Task AskAsync_EmbedFails_PropagatesError()
     {
         _embedder.EmbedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                 .Returns(ChainResult<float[]>.Failure(new WeaveLLMError("embed fail", "ProviderError", null)));
+                 .Returns(ChainResult<float[]>.Failure(WeaveLLMError.ProviderError("mock", "embed fail")));
 
         var result = await _sut.AskAsync("question?", 5, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     [Fact]
@@ -182,12 +184,12 @@ public sealed class RagPipelineTests
                  .Returns(ChainResult<float[]>.Success(new[] { 1f, 0f }));
         _store.SearchAsync(Arg.Any<float[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
               .Returns(ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
-                  new WeaveLLMError("empty", "NotFound", null)));
+                  WeaveLLMError.NotFound("empty")));
 
         var result = await _sut.AskAsync("question?", 5, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     // --- AskAsync success ---
@@ -204,7 +206,7 @@ public sealed class RagPipelineTests
         _store.SearchAsync(Arg.Any<float[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
               .Returns(ChainResult<IReadOnlyList<RetrievalResult>>.Success(sources));
         _chatClient.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
-                   .Returns(ChainResult<LLMMessage>.Success(new LLMMessage { Role = MessageRole.Assistant, Content = expectedAnswer }));
+                   .Returns(ChainResult<ChatResponse>.Success(new ChatResponse { Content = expectedAnswer }));
 
         var result = await _sut.AskAsync("question?", 5, CancellationToken.None);
 

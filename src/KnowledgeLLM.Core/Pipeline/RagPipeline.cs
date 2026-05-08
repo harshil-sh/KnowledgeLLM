@@ -1,14 +1,14 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Documents;
-using KnowledgeLLM.Core.Embeddings;
 using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging;
 using WeaveLLM.Core.Models;
 using IChatModel = WeaveLLM.Core.Providers.IChatModel;
-using LLMMessage = WeaveLLM.Core.Providers.Message;
-using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
-using MessageRole = WeaveLLM.Core.Providers.MessageRole;
+using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
+using LLMMessage = WeaveLLM.Core.Models.Message;
+using LLMOptions = WeaveLLM.Core.Models.LLMOptions;
 
 namespace KnowledgeLLM.Core.Pipeline;
 
@@ -21,6 +21,7 @@ public sealed class RagPipeline : IRagPipeline
     private readonly IVectorStore _vectorStore;
     private readonly IChatModel _chatModel;
     private readonly ILogger<RagPipeline> _logger;
+    private readonly ActivitySource _activitySource;
 
     /// <summary>Initialises the pipeline with all required dependencies.</summary>
     public RagPipeline(
@@ -29,7 +30,8 @@ public sealed class RagPipeline : IRagPipeline
         IEmbeddingModel embeddingModel,
         IVectorStore vectorStore,
         IChatModel chatModel,
-        ILogger<RagPipeline> logger)
+        ILogger<RagPipeline> logger,
+        ActivitySource activitySource)
     {
         _loader = loader;
         _chunker = chunker;
@@ -37,6 +39,7 @@ public sealed class RagPipeline : IRagPipeline
         _vectorStore = vectorStore;
         _chatModel = chatModel;
         _logger = logger;
+        _activitySource = activitySource;
     }
 
     /// <summary>
@@ -47,18 +50,29 @@ public sealed class RagPipeline : IRagPipeline
     /// <param name="ct">Cancellation token.</param>
     public async Task<ChainResult<int>> IndexAsync(string source, CancellationToken ct)
     {
+        using var indexActivity = _activitySource.StartActivity("knowledge.index");
+        indexActivity?.SetTag("document.source", source);
+
         if (string.IsNullOrWhiteSpace(source))
         {
             _logger.LogWarning("IndexAsync called with null or whitespace source.");
-            return ChainResult<int>.Failure(WeaveLLMError.InvalidInput("source must not be null or whitespace."));
+            var err = WeaveLLMError.InvalidInput("source must not be null or whitespace.");
+            MarkError(indexActivity, err.Code, err.Message);
+            return ChainResult<int>.Failure(err);
         }
 
         _logger.LogInformation("Loading documents from {Source}", source);
-        var loadResult = await _loader.LoadAsync(source, ct);
-        if (!loadResult.IsSuccess)
+        ChainResult<IReadOnlyList<Document>> loadResult;
+        using (var loadActivity = _activitySource.StartActivity("knowledge.load"))
         {
-            _logger.LogError("Load failed [{Code}]: {Message}", loadResult.Error.Code, loadResult.Error.Message);
-            return ChainResult<int>.Failure(loadResult.Error);
+            loadResult = await _loader.LoadAsync(source, ct);
+            if (!loadResult.IsSuccess)
+            {
+                _logger.LogError("Load failed [{Code}]: {Message}", loadResult.Error.Code, loadResult.Error.Message);
+                MarkError(loadActivity, loadResult.Error.Code, loadResult.Error.Message);
+                MarkError(indexActivity, loadResult.Error.Code, loadResult.Error.Message);
+                return ChainResult<int>.Failure(loadResult.Error);
+            }
         }
 
         var totalChunks = 0;
@@ -66,34 +80,60 @@ public sealed class RagPipeline : IRagPipeline
         foreach (var document in loadResult.Value)
         {
             _logger.LogDebug("Chunking document {Id}", document.Id);
-            var chunkResult = await _chunker.ChunkAsync(document, ct);
-            if (!chunkResult.IsSuccess)
+            IReadOnlyList<TextChunk> chunks;
+            using (var chunkActivity = _activitySource.StartActivity("knowledge.chunk"))
             {
-                _logger.LogError("Chunk failed for {Id} [{Code}]: {Message}", document.Id, chunkResult.Error.Code, chunkResult.Error.Message);
-                return ChainResult<int>.Failure(chunkResult.Error);
+                chunkActivity?.SetTag("document.id", document.Id);
+                var chunkResult = await _chunker.ChunkAsync(document, ct);
+                if (!chunkResult.IsSuccess)
+                {
+                    _logger.LogError("Chunk failed for {Id} [{Code}]: {Message}", document.Id, chunkResult.Error.Code, chunkResult.Error.Message);
+                    MarkError(chunkActivity, chunkResult.Error.Code, chunkResult.Error.Message);
+                    MarkError(indexActivity, chunkResult.Error.Code, chunkResult.Error.Message);
+                    return ChainResult<int>.Failure(chunkResult.Error);
+                }
+
+                chunks = chunkResult.Value;
             }
 
-            var chunks = chunkResult.Value;
             var texts = chunks.Select(c => c.Content).ToList();
 
             _logger.LogDebug("Embedding {Count} chunks for {Id}", chunks.Count, document.Id);
-            var embedResult = await _embeddingModel.EmbedBatchAsync(texts, ct);
-            if (!embedResult.IsSuccess)
+            IReadOnlyList<float[]> embeddings;
+            using (var embedActivity = _activitySource.StartActivity("knowledge.embed"))
             {
-                _logger.LogError("Embed failed for {Id} [{Code}]: {Message}", document.Id, embedResult.Error.Code, embedResult.Error.Message);
-                return ChainResult<int>.Failure(embedResult.Error);
+                embedActivity?.SetTag("document.id", document.Id);
+                embedActivity?.SetTag("chunks.count", chunks.Count);
+                var embedResult = await _embeddingModel.EmbedBatchAsync(texts, ct);
+                if (!embedResult.IsSuccess)
+                {
+                    _logger.LogError("Embed failed for {Id} [{Code}]: {Message}", document.Id, embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(embedActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(indexActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    return ChainResult<int>.Failure(embedResult.Error);
+                }
+
+                embeddings = embedResult.Value;
             }
 
-            var upsertResult = await _vectorStore.UpsertAsync(chunks, embedResult.Value, ct);
-            if (!upsertResult.IsSuccess)
+            using (var upsertActivity = _activitySource.StartActivity("knowledge.upsert"))
             {
-                _logger.LogError("Upsert failed for {Id} [{Code}]: {Message}", document.Id, upsertResult.Error.Code, upsertResult.Error.Message);
-                return ChainResult<int>.Failure(upsertResult.Error);
-            }
+                upsertActivity?.SetTag("document.id", document.Id);
+                upsertActivity?.SetTag("chunks.count", chunks.Count);
+                var upsertResult = await _vectorStore.UpsertAsync(chunks, embeddings, ct);
+                if (!upsertResult.IsSuccess)
+                {
+                    _logger.LogError("Upsert failed for {Id} [{Code}]: {Message}", document.Id, upsertResult.Error.Code, upsertResult.Error.Message);
+                    MarkError(upsertActivity, upsertResult.Error.Code, upsertResult.Error.Message);
+                    MarkError(indexActivity, upsertResult.Error.Code, upsertResult.Error.Message);
+                    return ChainResult<int>.Failure(upsertResult.Error);
+                }
 
-            totalChunks += upsertResult.Value;
+                totalChunks += upsertResult.Value;
+            }
         }
 
+        indexActivity?.SetTag("chunks.count", totalChunks);
         _logger.LogInformation("Indexed {Total} chunks from {Source}", totalChunks, source);
         return ChainResult<int>.Success(totalChunks);
     }
@@ -107,50 +147,79 @@ public sealed class RagPipeline : IRagPipeline
     /// <param name="ct">Cancellation token.</param>
     public async Task<ChainResult<RagAnswer>> AskAsync(string question, int topK, CancellationToken ct)
     {
+        using var askActivity = _activitySource.StartActivity("knowledge.ask");
+        askActivity?.SetTag("topk", topK);
+
         if (string.IsNullOrWhiteSpace(question))
         {
             _logger.LogWarning("AskAsync called with null or whitespace question.");
-            return ChainResult<RagAnswer>.Failure(WeaveLLMError.InvalidInput("question must not be null or whitespace."));
+            var err = WeaveLLMError.InvalidInput("question must not be null or whitespace.");
+            MarkError(askActivity, err.Code, err.Message);
+            return ChainResult<RagAnswer>.Failure(err);
         }
 
         if (topK < 1)
         {
             _logger.LogWarning("AskAsync called with topK={TopK}", topK);
-            return ChainResult<RagAnswer>.Failure(WeaveLLMError.InvalidInput("topK must be >= 1."));
+            var err = WeaveLLMError.InvalidInput("topK must be >= 1.");
+            MarkError(askActivity, err.Code, err.Message);
+            return ChainResult<RagAnswer>.Failure(err);
         }
 
-        _logger.LogInformation("Embedding question for retrieval");
-        var embedResult = await _embeddingModel.EmbedAsync(question, ct);
-        if (!embedResult.IsSuccess)
+        IReadOnlyList<RetrievalResult> sources;
+        using (var searchActivity = _activitySource.StartActivity("knowledge.search"))
         {
-            _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
-            return ChainResult<RagAnswer>.Failure(embedResult.Error);
+            searchActivity?.SetTag("topk", topK);
+
+            _logger.LogInformation("Embedding question for retrieval");
+            var embedResult = await _embeddingModel.EmbedAsync(question, ct);
+            if (!embedResult.IsSuccess)
+            {
+                _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+                MarkError(searchActivity, embedResult.Error.Code, embedResult.Error.Message);
+                MarkError(askActivity, embedResult.Error.Code, embedResult.Error.Message);
+                return ChainResult<RagAnswer>.Failure(embedResult.Error);
+            }
+
+            _logger.LogDebug("Searching vector store topK={TopK}", topK);
+            var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
+            if (!searchResult.IsSuccess)
+            {
+                _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
+                MarkError(searchActivity, searchResult.Error.Code, searchResult.Error.Message);
+                MarkError(askActivity, searchResult.Error.Code, searchResult.Error.Message);
+                return ChainResult<RagAnswer>.Failure(searchResult.Error);
+            }
+
+            sources = searchResult.Value;
+            searchActivity?.SetTag("sources.count", sources.Count);
         }
 
-        _logger.LogDebug("Searching vector store topK={TopK}", topK);
-        var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
-        if (!searchResult.IsSuccess)
-        {
-            _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
-            return ChainResult<RagAnswer>.Failure(searchResult.Error);
-        }
-
-        var sources = searchResult.Value;
         if (sources.Count == 0)
         {
             _logger.LogWarning("No relevant sources found for question.");
-            return ChainResult<RagAnswer>.Failure(
-                new WeaveLLMError("No relevant context found for the question.", "NotFound", null));
+            var err = WeaveLLMError.NotFound("No relevant context found for the question.");
+            MarkError(askActivity, err.Code, err.Message);
+            return ChainResult<RagAnswer>.Failure(err);
         }
 
         var prompt = PromptBuilder.BuildRagPrompt(question, sources);
-        var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
-        var chatResult = await _chatModel.ChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct);
-        if (!chatResult.IsSuccess)
-            return ChainResult<RagAnswer>.Failure(chatResult.Error);
+        var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
 
-        _logger.LogInformation("AskAsync returning {Count} source(s)", sources.Count);
-        return ChainResult<RagAnswer>.Success(new RagAnswer(chatResult.Value.Content, sources));
+        using (var completeActivity = _activitySource.StartActivity("knowledge.complete"))
+        {
+            completeActivity?.SetTag("sources.count", sources.Count);
+            var chatResult = await _chatModel.ChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct);
+            if (!chatResult.IsSuccess)
+            {
+                MarkError(completeActivity, chatResult.Error.Code, chatResult.Error.Message);
+                MarkError(askActivity, chatResult.Error.Code, chatResult.Error.Message);
+                return ChainResult<RagAnswer>.Failure(chatResult.Error);
+            }
+
+            _logger.LogInformation("AskAsync returning {Count} source(s)", sources.Count);
+            return ChainResult<RagAnswer>.Success(new RagAnswer(chatResult.Value.Content, sources));
+        }
     }
 
     /// <summary>
@@ -167,13 +236,13 @@ public sealed class RagPipeline : IRagPipeline
     {
         if (string.IsNullOrWhiteSpace(question))
         {
-            yield return "[ERROR:InvalidInput] question must not be null or whitespace.";
+            yield return "[ERROR:INVALID_INPUT] question must not be null or whitespace.";
             yield break;
         }
 
         if (topK < 1)
         {
-            yield return "[ERROR:InvalidInput] topK must be >= 1.";
+            yield return "[ERROR:INVALID_INPUT] topK must be >= 1.";
             yield break;
         }
 
@@ -199,17 +268,24 @@ public sealed class RagPipeline : IRagPipeline
         if (sources.Count == 0)
         {
             _logger.LogWarning("No relevant sources found for streaming question.");
-            yield return "[ERROR:NotFound] No relevant context found for the question.";
+            yield return "[ERROR:NOT_FOUND] No relevant context found for the question.";
             yield break;
         }
 
         var prompt = PromptBuilder.BuildRagPrompt(question, sources);
-        var messages = new List<LLMMessage> { new() { Role = MessageRole.User, Content = prompt } };
+        var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
 
         _logger.LogInformation("Streaming answer for question");
         await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
         {
             yield return token;
         }
+    }
+
+    /// <summary>Marks an activity as failed with the given error code and description.</summary>
+    private static void MarkError(Activity? activity, string code, string message)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error, message);
+        activity?.SetTag("error.code", code);
     }
 }
