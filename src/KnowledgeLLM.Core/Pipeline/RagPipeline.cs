@@ -276,9 +276,17 @@ public sealed class RagPipeline : IRagPipeline
         var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
 
         _logger.LogInformation("Streaming answer for question");
-        await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
+        await foreach (var result in _chatModel.StreamChatSafeAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
         {
-            yield return token;
+            if (!result.IsSuccess)
+            {
+                if (result.Error.Code == "CANCELLED")
+                    yield break;
+                _logger.LogError("Streaming chat failed [{Code}]: {Message}", result.Error.Code, result.Error.Message);
+                yield return $"[ERROR:{result.Error.Code}] {result.Error.Message}";
+                yield break;
+            }
+            yield return result.Value;
         }
     }
 

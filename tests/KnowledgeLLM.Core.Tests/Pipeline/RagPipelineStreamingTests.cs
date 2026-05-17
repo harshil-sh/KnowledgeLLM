@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using FluentAssertions;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Pipeline;
@@ -7,11 +6,9 @@ using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using WeaveLLM.Core.Models;
+using WeaveLLM.Testing;
 using Xunit;
-using IChatModel = WeaveLLM.Core.Providers.IChatModel;
 using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
-using LLMMessage = WeaveLLM.Core.Models.Message;
-using LLMOptions = WeaveLLM.Core.Models.LLMOptions;
 
 namespace KnowledgeLLM.Core.Tests.Pipeline;
 
@@ -19,7 +16,7 @@ public sealed class RagPipelineStreamingTests
 {
     private readonly IEmbeddingModel _embedder = Substitute.For<IEmbeddingModel>();
     private readonly IVectorStore _store = Substitute.For<IVectorStore>();
-    private readonly IChatModel _chatModel = Substitute.For<IChatModel>();
+    private readonly FakeStreamingChatModel _fakeChat = new();
     private readonly RagPipeline _sut;
 
     public RagPipelineStreamingTests()
@@ -29,7 +26,7 @@ public sealed class RagPipelineStreamingTests
             Substitute.For<KnowledgeLLM.Core.Chunking.ITextChunker>(),
             _embedder,
             _store,
-            _chatModel,
+            _fakeChat,
             NullLogger<RagPipeline>.Instance,
             new ActivitySource("test"));
     }
@@ -44,18 +41,6 @@ public sealed class RagPipelineStreamingTests
                  .Returns(ChainResult<float[]>.Success(new[] { 1f, 0f }));
         _store.SearchAsync(Arg.Any<float[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
               .Returns(ChainResult<IReadOnlyList<RetrievalResult>>.Success(sources));
-    }
-
-    /// <summary>Async iterator helper that respects cancellation between tokens.</summary>
-    private static async IAsyncEnumerable<string> TokenStream(
-        IEnumerable<string> tokens,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        foreach (var token in tokens)
-        {
-            ct.ThrowIfCancellationRequested();
-            yield return token;
-        }
     }
 
     // --- invalid input ---
@@ -145,11 +130,7 @@ public sealed class RagPipelineStreamingTests
     public async Task AskStreamAsync_Success_YieldsAllTokensInOrder()
     {
         SetupSuccessfulEmbedAndSearch();
-        _chatModel.StreamChatAsync(
-                Arg.Any<IReadOnlyList<LLMMessage>>(),
-                Arg.Any<LLMOptions>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TokenStream(new[] { "Hello", " world", "!" }));
+        _fakeChat.Tokens = new[] { "Hello", " world", "!" };
 
         var tokens = new List<string>();
         await foreach (var t in _sut.AskStreamAsync("question?", ct: CancellationToken.None))
@@ -166,23 +147,15 @@ public sealed class RagPipelineStreamingTests
     public async Task AskStreamAsync_CancellationMidStream_StopsYielding()
     {
         SetupSuccessfulEmbedAndSearch();
-        _chatModel.StreamChatAsync(
-                Arg.Any<IReadOnlyList<LLMMessage>>(),
-                Arg.Any<LLMOptions>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TokenStream(new[] { "token1", "token2", "token3" }));
+        _fakeChat.Tokens = new[] { "token1", "token2", "token3" };
 
         using var cts = new CancellationTokenSource();
         var tokens = new List<string>();
-        try
+        await foreach (var t in _sut.AskStreamAsync("question?", ct: cts.Token))
         {
-            await foreach (var t in _sut.AskStreamAsync("question?", ct: cts.Token))
-            {
-                tokens.Add(t);
-                await cts.CancelAsync(); // cancel after the first token
-            }
+            tokens.Add(t);
+            await cts.CancelAsync(); // cancel after the first token; FakeStreamingChatModel converts to ChainResult.Failure(CANCELLED)
         }
-        catch (OperationCanceledException) { }
 
         tokens.Should().HaveCount(1);
         tokens[0].Should().Be("token1");
