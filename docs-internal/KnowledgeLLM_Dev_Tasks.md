@@ -686,6 +686,19 @@ Update CLAUDE.md to reflect the completed project state:
   - `OpenTelemetry.Exporter.Console` / `OpenTelemetryProtocol` (in `KnowledgeLLM.Api.csproj`): `1.8.1` → `1.10.0`
 - `dotnet build` passes with 0 errors.
 
+### L-7 + L-8 resolved — WeaveLLM.Testing 0.2.1-alpha + StreamChatSafeAsync — 17 May 2026
+
+- **`WeaveLLM.Testing 0.2.1-alpha` published** — ships `FakeStreamingChatModel`, a concrete `IChatModel` implementation for test use. Added to `KnowledgeLLM.Core.Tests.csproj`. The `TokenStream` static iterator helper in `RagPipelineStreamingTests.cs` is removed; all streaming test setups now use `_fakeChat.Tokens = new[] { ... }` instead of NSubstitute stubs on `StreamChatAsync`.
+- **`FakeStreamingChatModel` API (reflected from DLL):**
+  - `Tokens: IEnumerable<string>` — tokens to yield as `ChainResult<string>.Success(token)` items
+  - `ErrorAfterTokens: WeaveLLMError` + `TokensBeforeError: int` — injects a `Failure` result after N success tokens
+  - `BlockingResponse: string` — returned by `ChatAsync` for non-streaming tests
+  - `StreamChatSafeAsync` converts consumer-initiated cancellation to `ChainResult.Failure(WeaveLLMError.Cancelled(...))` rather than throwing `OperationCanceledException`
+- **`IChatModel.StreamChatSafeAsync` added to interface (L-7 fix)** — returns `IAsyncEnumerable<ChainResult<string>>`. `IChatModel` now inherits two interfaces: `ILanguageModel` and `IStreamingChatModel` (which owns the raw `StreamChatAsync → IAsyncEnumerable<string>`). `StreamChatSafeAsync` is declared directly on `IChatModel`.
+- **`RagPipeline.AskStreamAsync` updated** — switched from `StreamChatAsync` to `StreamChatSafeAsync`. `CANCELLED` error results `yield break` silently (consumer already knows they cancelled); all other failures emit `[ERROR:CODE] message` then `yield break`. No exceptions propagate.
+- **Cancellation test updated** — `OperationCanceledException` catch block removed; `FakeStreamingChatModel` ends the stream cleanly via a `CANCELLED` result instead of throwing.
+- **178/178 tests pass** after changes.
+
 ### L-1 resolution verification — 08 May 2026
 
 - **`WeaveLLM.Core.Providers.IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings`** — No code changes required. All four affected files (`RagPipeline.cs`, `RagPipelineTests.cs`, `RagPipelineIntegrationTests.cs`, `ServiceCollectionExtensions.cs`) already alias `IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel` (our own interface) — the WeaveLLM-internal move has zero impact on the call sites. `dotnet build` passes with 0 errors.

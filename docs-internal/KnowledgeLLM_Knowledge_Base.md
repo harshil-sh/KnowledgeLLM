@@ -1,6 +1,6 @@
 # KnowledgeLLM — Project Knowledge Base
 
-> Last updated: 17 May 2026 (L-1 partial resolution; L-2 + L-3 resolved; full `WeaveLLMError` factory method inventory reflected from 0.2.1-alpha DLL — L-10 fully resolved; `RagPipeline.cs` streaming tokens and `RagPipeline*Tests.cs` all updated to SCREAMING_SNAKE_CASE; `OpenAIEmbeddingModel.cs` 6 manual `new WeaveLLMError(...)` calls replaced with factory methods — entire codebase now fully clean)
+> Last updated: 17 May 2026 (L-7 + L-8 resolved: `IChatModel.StreamChatSafeAsync` added to 0.2.1-alpha; `WeaveLLM.Testing 0.2.1-alpha` published with `FakeStreamingChatModel`; `RagPipeline.AskStreamAsync` switched to `StreamChatSafeAsync`; streaming tests migrated from `TokenStream` helper to `FakeStreamingChatModel`)
 > Single source of truth for project context, architecture, and conventions.
 
 ---
@@ -59,11 +59,12 @@ WeaveLLM.Extensions.DependencyInjection    ← fluent DI builder (0.2.0-alpha no
 
 **Breaking change from 0.1.0-alpha:** `Message`, `LLMOptions`, and `MessageRole` moved from `WeaveLLM.Core.Providers` into `WeaveLLM.Core.Models`. `MessageRole` was renamed to `Role`.
 
-### Full interface inventory (0.2.0-alpha)
+### Full interface inventory (0.2.1-alpha)
 
 | Type | Namespace | Kind | Key members |
 |---|---|---|---|
-| `IChatModel` | `WeaveLLM.Core.Providers` | Interface | `ChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → Task<ChainResult<ChatResponse>>`<br>`StreamChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → IAsyncEnumerable<string>` |
+| `IChatModel` | `WeaveLLM.Core.Providers` | Interface (inherits `ILanguageModel` + `IStreamingChatModel`) | `ChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → Task<ChainResult<ChatResponse>>`<br>`StreamChatSafeAsync(IReadOnlyList<Message>, LLMOptions, ct) → IAsyncEnumerable<ChainResult<string>>` ← **use this for streaming** (L-7 fix)<br>Also inherits `StreamChatAsync(...)→ IAsyncEnumerable<string>` from `IStreamingChatModel` |
+| `IStreamingChatModel` | `WeaveLLM.Core.Providers` | Interface (base of `IChatModel`) | `StreamChatAsync(IReadOnlyList<Message>, LLMOptions, ct) → IAsyncEnumerable<string>` — raw tokens, no error signal; prefer `StreamChatSafeAsync` |
 | `ILanguageModel` | `WeaveLLM.Core.Providers` | Interface (base of `IChatModel`) | `CompleteAsync(string, LLMOptions, ct) → Task<ChainResult<string>>`<br>`StreamCompleteAsync(string, LLMOptions, ct) → IAsyncEnumerable<string>` |
 | `IEmbeddingModel` | `WeaveLLM.Core.Providers` AND `WeaveLLM.Core.Models` | Interface | ⚠️ exists in TWO namespaces — see collision note below |
 | `LLMOptions` | `WeaveLLM.Core.Models` | Class | `Temperature double?`, `MaxTokens int?`, `StopSequences`, `ProviderSpecific Dictionary<string,object>` (moved from `WeaveLLM.Core.Providers` in 0.2.0) |
@@ -113,18 +114,26 @@ _chatModel.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>()
           .Returns(ChainResult<ChatResponse>.Success(new ChatResponse { Content = "answer" }));
 ```
 
-### Streaming — `IChatModel.StreamChatAsync` (no separate `IStreamingChatModel`)
+### Streaming — use `IChatModel.StreamChatSafeAsync` (L-7 fix, 0.2.1-alpha)
 
-Unchanged from 0.1.0-alpha. Streaming is built directly into `IChatModel`:
+`IChatModel.StreamChatSafeAsync` is the preferred streaming method as of 0.2.1-alpha. It returns `IAsyncEnumerable<ChainResult<string>>` — each item is either `Success(token)` or `Failure(WeaveLLMError)` — eliminating the CS1626 try-catch workaround. `CANCELLED` results should `yield break` silently (consumer-initiated); all other failures emit an `[ERROR:CODE]` token.
 
 ```csharp
 var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
-await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct)
-                                      .WithCancellation(ct))
+await foreach (var result in _chatModel.StreamChatSafeAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct)
+                                       .WithCancellation(ct))
 {
-    yield return token;
+    if (!result.IsSuccess)
+    {
+        if (result.Error.Code == "CANCELLED") yield break;
+        yield return $"[ERROR:{result.Error.Code}] {result.Error.Message}";
+        yield break;
+    }
+    yield return result.Value;
 }
 ```
+
+`StreamChatAsync` (raw `IAsyncEnumerable<string>`, inherited from `IStreamingChatModel`) still exists but should not be used in new code — it has no error signal and forces non-obvious boilerplate to handle mid-stream failures.
 
 `ILanguageModel.StreamCompleteAsync(string, LLMOptions, ct)` also exists for single-turn plain-string flows.
 
@@ -178,31 +187,32 @@ All production source files use factory methods exclusively — including `OpenA
 
 **Rule:** never use `new WeaveLLMError(msg, "SomeCode", ex)` directly — always use a factory method.
 
-### Mocking `IChatModel` in tests (NSubstitute)
+### Mocking `IChatModel` in tests — use `FakeStreamingChatModel` (L-8 fix, 0.2.1-alpha)
+
+Add `WeaveLLM.Testing 0.2.1-alpha` to the test project. Use `FakeStreamingChatModel` directly — it implements `IChatModel` and handles both blocking and streaming:
 
 ```csharp
-var chatModel = Substitute.For<IChatModel>();
+// In test class field:
+private readonly FakeStreamingChatModel _fakeChat = new();
 
-// Blocking chat
-chatModel.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
-         .Returns(ChainResult<LLMMessage>.Success(new LLMMessage { Role = MessageRole.Assistant, Content = "answer" }));
+// Wire into the system under test (FakeStreamingChatModel implements IChatModel):
+_sut = new RagPipeline(..., _fakeChat, ...);
 
-// Streaming — DO NOT use .ToAsyncEnumerable() — it does not propagate cancellation (see L-8)
-// Use a static async iterator helper with [EnumeratorCancellation] instead:
-private static async IAsyncEnumerable<string> TokenStream(
-    IEnumerable<string> tokens,
-    [EnumeratorCancellation] CancellationToken ct = default)
-{
-    foreach (var token in tokens)
-    {
-        ct.ThrowIfCancellationRequested();
-        yield return token;
-    }
-}
+// Arrange streaming tokens:
+_fakeChat.Tokens = new[] { "Hello", " world", "!" };
 
-chatModel.StreamChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
-         .Returns(TokenStream(new[] { "Hello", " world", "!" }));
+// Arrange a mid-stream error (after N tokens):
+_fakeChat.Tokens = new[] { "token1", "token2" };
+_fakeChat.ErrorAfterTokens = WeaveLLMError.ProviderError("fake", "mid-stream failure");
+_fakeChat.TokensBeforeError = 1; // emit 1 token then the error result
+
+// Arrange a blocking response:
+_fakeChat.BlockingResponse = "This is a test answer.";
 ```
+
+`FakeStreamingChatModel.StreamChatSafeAsync` converts consumer-initiated cancellation into a `ChainResult.Failure(WeaveLLMError.Cancelled(...))` rather than throwing `OperationCanceledException`. `RagPipeline.AskStreamAsync` handles `CANCELLED` with a silent `yield break`, so the caller's `await foreach` ends cleanly without an exception.
+
+**Do not** use the old `TokenStream` static helper + NSubstitute `StreamChatAsync` stub approach — it no longer works with `StreamChatSafeAsync` and is removed from the codebase.
 
 ---
 
@@ -705,11 +715,11 @@ Question (string)
 ### Query flow (streaming)
 ```
 Question (string)
-  → IEmbeddingModel.EmbedAsync()      — embeds the question
-  → IVectorStore.SearchAsync()        — cosine similarity top-K retrieval
-  → PromptBuilder.BuildRagPrompt()    — formats grounded prompt
-  → IChatModel.StreamChatAsync()      — yields string tokens as IAsyncEnumerable<string>
-  → yields: tokens one-by-one (error token on pre-stream failure, then stops)
+  → IEmbeddingModel.EmbedAsync()         — embeds the question
+  → IVectorStore.SearchAsync()           — cosine similarity top-K retrieval
+  → PromptBuilder.BuildRagPrompt()       — formats grounded prompt
+  → IChatModel.StreamChatSafeAsync()     — yields ChainResult<string> tokens (L-7 fix)
+  → yields: token strings on Success; CANCELLED → silent stop; other failures → [ERROR:CODE] token then stop
 ```
 
 ### Short-circuit rule
@@ -871,6 +881,7 @@ All production code uses factory methods (SCREAMING_SNAKE_CASE). Controller upda
 
 ### KnowledgeLLM.Core.Tests.csproj
 ```xml
+<PackageReference Include="WeaveLLM.Testing" Version="0.2.1-alpha" />
 <PackageReference Include="xunit" Version="2.9.0" />
 <PackageReference Include="FluentAssertions" Version="6.12.0" />
 <PackageReference Include="NSubstitute" Version="5.1.0" />
