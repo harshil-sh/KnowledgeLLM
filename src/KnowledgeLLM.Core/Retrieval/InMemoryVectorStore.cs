@@ -27,7 +27,7 @@ public sealed class InMemoryVectorStore : IVectorStore
         {
             if (ct.IsCancellationRequested)
                 return Task.FromResult(ChainResult<int>.Failure(
-                    new WeaveLLMError("Operation was cancelled.", "Cancelled", null)));
+                    WeaveLLMError.Cancelled("Operation was cancelled.", null!)));
 
             _store[chunks[i].Id] = (chunks[i], embeddings[i]);
         }
@@ -53,7 +53,7 @@ public sealed class InMemoryVectorStore : IVectorStore
 
         if (_store.IsEmpty)
             return Task.FromResult(ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
-                new WeaveLLMError("The vector store is empty.", "NotFound", null)));
+                WeaveLLMError.NotFound("The vector store is empty.")));
 
         var results = _store.Values
             .Select(entry => new RetrievalResult(entry.Chunk, CosineSimilarity(queryEmbedding, entry.Embedding)))

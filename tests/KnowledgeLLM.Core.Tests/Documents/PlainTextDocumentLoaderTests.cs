@@ -35,7 +35,7 @@ public sealed class PlainTextDocumentLoaderTests : IDisposable
         var result = await _sut.LoadAsync(Path.Combine(_tempDir, "missing.txt"), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     // --- Single file ---
@@ -106,6 +106,6 @@ public sealed class PlainTextDocumentLoaderTests : IDisposable
         var result = await _sut.LoadAsync(_tempDir, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 }

@@ -70,6 +70,6 @@ public sealed class CompositeDocumentLoader : IDocumentLoader
         }
 
         return ChainResult<IReadOnlyList<Document>>.Failure(
-            new WeaveLLMError($"Path not found: {source}", "NotFound", null));
+            WeaveLLMError.NotFound($"Path not found: {source}"));
     }
 }

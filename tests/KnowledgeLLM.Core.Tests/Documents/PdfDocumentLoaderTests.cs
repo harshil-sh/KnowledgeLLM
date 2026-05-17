@@ -35,6 +35,71 @@ public sealed class PdfDocumentLoaderTests : IDisposable
         return path;
     }
 
+    // ── Integration tests against real test PDF ───────────────────────────────
+
+    private static readonly string TestPdfPath =
+        Path.Combine(AppContext.BaseDirectory, "TestData", "knowledgellm_test_document.pdf");
+
+    [Fact]
+    public async Task LoadAsync_ValidPdf_ReturnsDocument()
+    {
+        var result = await _sut.LoadAsync(TestPdfPath, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+
+        var doc = result.Value[0];
+        doc.Content.Should().Contain("Acme Corp");
+        doc.Content.Should().Contain("annual leave");
+        doc.SafeMetadata["pages"].Should().Be("4");
+        doc.SafeMetadata["source"].Should().Be("pdf");
+    }
+
+    [Fact]
+    public async Task LoadAsync_ValidPdf_ContentContainsAllPages()
+    {
+        var result = await _sut.LoadAsync(TestPdfPath, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var content = result.Value[0].Content;
+
+        content.Should().Contain("Sheffield");
+        content.Should().Contain("Private Medical Insurance");
+        content.Should().Contain("IT Security Policy");
+        content.Should().Contain("probationary period");
+    }
+
+    [Fact]
+    public async Task LoadAsync_FileNotFound_ReturnsNotFoundError()
+    {
+        var result = await _sut.LoadAsync(
+            Path.Combine(_tempDir, "does_not_exist.pdf"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task LoadAsync_NullSource_ReturnsInvalidInputError()
+    {
+        var result = await _sut.LoadAsync(null!, CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("INVALID_INPUT");
+    }
+
+    [Fact]
+    public async Task LoadAsync_CancellationRequested_ReturnsCancelledError()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var result = await _sut.LoadAsync(TestPdfPath, cts.Token);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("CANCELLED");
+    }
+
     // ── Invalid input ─────────────────────────────────────────────────────────
 
     [Theory]
@@ -58,7 +123,7 @@ public sealed class PdfDocumentLoaderTests : IDisposable
             Path.Combine(_tempDir, "missing.pdf"), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     [Fact]
@@ -68,7 +133,7 @@ public sealed class PdfDocumentLoaderTests : IDisposable
             Path.Combine(_tempDir, "no-such-dir"), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     // ── Single file ───────────────────────────────────────────────────────────
@@ -160,7 +225,7 @@ public sealed class PdfDocumentLoaderTests : IDisposable
         var result = await _sut.LoadAsync(path, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     // ── Cancellation ──────────────────────────────────────────────────────────
@@ -175,7 +240,7 @@ public sealed class PdfDocumentLoaderTests : IDisposable
         var result = await _sut.LoadAsync(path, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -188,6 +253,6 @@ public sealed class PdfDocumentLoaderTests : IDisposable
         var result = await _sut.LoadAsync(_tempDir, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 }

@@ -1,16 +1,17 @@
 using FluentAssertions;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Documents;
-using KnowledgeLLM.Core.Embeddings;
 using KnowledgeLLM.Core.Pipeline;
 using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using System.Diagnostics;
 using WeaveLLM.Core.Models;
 using IChatModel = WeaveLLM.Core.Providers.IChatModel;
-using LLMMessage = WeaveLLM.Core.Providers.Message;
-using LLMOptions = WeaveLLM.Core.Providers.LLMOptions;
-using MessageRole = WeaveLLM.Core.Providers.MessageRole;
+using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
+using LLMMessage = WeaveLLM.Core.Models.Message;
+using LLMOptions = WeaveLLM.Core.Models.LLMOptions;
+using MessageRole = WeaveLLM.Core.Models.Role;
 using Xunit;
 
 namespace KnowledgeLLM.Core.Tests.Pipeline;
@@ -42,11 +43,11 @@ public sealed class RagPipelineIntegrationTests
 
             var chatClient = Substitute.For<IChatModel>();
             chatClient.ChatAsync(Arg.Any<IReadOnlyList<LLMMessage>>(), Arg.Any<LLMOptions>(), Arg.Any<CancellationToken>())
-                      .Returns(ChainResult<LLMMessage>.Success(new LLMMessage { Role = MessageRole.Assistant, Content = "This is a test answer." }));
+                      .Returns(ChainResult<ChatResponse>.Success(new ChatResponse { Content = "This is a test answer." }));
 
             var pipeline = new RagPipeline(
                 loader, chunker, embeddingModel, vectorStore, chatClient,
-                NullLogger<RagPipeline>.Instance);
+                NullLogger<RagPipeline>.Instance, new ActivitySource("test"));
 
             var indexResult = await pipeline.IndexAsync(tempFile, CancellationToken.None);
             indexResult.IsSuccess.Should().BeTrue();

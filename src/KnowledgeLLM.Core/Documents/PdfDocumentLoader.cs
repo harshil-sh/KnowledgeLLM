@@ -27,7 +27,13 @@ public sealed class PdfDocumentLoader : IDocumentLoader
             if (File.Exists(source))
             {
                 ct.ThrowIfCancellationRequested();
-                IReadOnlyList<Document> single = [new Document(source, ExtractText(source))];
+                var (text, pages) = ExtractText(source);
+                var meta = new Dictionary<string, string>
+                {
+                    ["pages"] = pages.ToString(),
+                    ["source"] = "pdf",
+                };
+                IReadOnlyList<Document> single = [new Document(source, text, meta)];
                 return Task.FromResult(ChainResult<IReadOnlyList<Document>>.Success(single));
             }
 
@@ -39,7 +45,13 @@ public sealed class PdfDocumentLoader : IDocumentLoader
                 foreach (var file in files)
                 {
                     ct.ThrowIfCancellationRequested();
-                    documents.Add(new Document(file, ExtractText(file)));
+                    var (text, pages) = ExtractText(file);
+                    var meta = new Dictionary<string, string>
+                    {
+                        ["pages"] = pages.ToString(),
+                        ["source"] = "pdf",
+                    };
+                    documents.Add(new Document(file, text, meta));
                 }
 
                 return Task.FromResult(ChainResult<IReadOnlyList<Document>>.Success(
@@ -47,26 +59,30 @@ public sealed class PdfDocumentLoader : IDocumentLoader
             }
 
             return Task.FromResult(ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError($"Path not found: {source}", "NotFound", null)));
+                WeaveLLMError.NotFound($"Path not found: {source}")));
         }
         catch (OperationCanceledException ex)
         {
             return Task.FromResult(ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError("Operation was cancelled.", "Cancelled", ex)));
+                WeaveLLMError.Cancelled("Operation was cancelled.", ex)));
         }
         catch (Exception ex)
         {
             return Task.FromResult(ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError(ex.Message, "ProviderError", ex)));
+                WeaveLLMError.ProviderError("PdfPig", ex.Message, ex)));
         }
     }
 
-    private static string ExtractText(string path)
+    private static (string Text, int Pages) ExtractText(string path)
     {
         using var pdf = PdfDocument.Open(path);
         var sb = new StringBuilder();
+        var pages = 0;
         foreach (var page in pdf.GetPages())
+        {
             sb.Append(page.Text);
-        return sb.ToString();
+            pages++;
+        }
+        return (sb.ToString(), pages);
     }
 }

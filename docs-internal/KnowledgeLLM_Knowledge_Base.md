@@ -1,6 +1,6 @@
 # KnowledgeLLM — Project Knowledge Base
 
-> Last updated: 08 May 2026 (L-1 partial resolution — `WeaveLLM.Core.Providers.IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings`; no code changes needed; CLAUDE.md convention note updated)
+> Last updated: 17 May 2026 (L-1 partial resolution; L-2 + L-3 resolved; full `WeaveLLMError` factory method inventory reflected from 0.2.1-alpha DLL — L-10 fully resolved; `RagPipeline.cs` streaming tokens and `RagPipeline*Tests.cs` all updated to SCREAMING_SNAKE_CASE; `OpenAIEmbeddingModel.cs` 6 manual `new WeaveLLMError(...)` calls replaced with factory methods — entire codebase now fully clean)
 > Single source of truth for project context, architecture, and conventions.
 
 ---
@@ -47,14 +47,15 @@ WeaveLLM.Extensions.DependencyInjection    ← fluent DI builder (0.2.0-alpha no
 > Learned during Phase 3 (tasks 3-A, 3-B) and updated for 0.2.0-alpha (07 May 2026) by reflecting the DLLs directly.
 > Read this section before touching any WeaveLLM type to avoid repeating the same mistakes.
 
-### Package layout — interfaces vs. implementations (0.2.0-alpha)
+### Package layout — interfaces vs. implementations (0.2.1-alpha)
 
 | Package | What it contains |
 |---|---|
 | `WeaveLLM.Core` | `ChainResult<T>`, `WeaveLLMError`, `ChatResponse`, `Message`, `LLMOptions`, `Role` (all in `WeaveLLM.Core.Models`) |
 | `WeaveLLM.Core.Providers` (namespace inside `WeaveLLM.Core.dll`) | Provider **interfaces** only: `IChatModel`, `ILanguageModel`, `IStreamingChatModel` — `IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings` (L-1 fix) |
-| `WeaveLLM.Core.Providers.Embeddings` | `IEmbeddingModel` — new canonical location as of L-1 fix |
-| `WeaveLLM.Providers` | Concrete implementations only: `OpenAIChatModel`, `AnthropicChatModel` |
+| `WeaveLLM.Core.Providers.Embeddings` | `IEmbeddingModel` — canonical location since L-1 fix |
+| `WeaveLLM.Providers` | Concrete implementations: `OpenAIChatModel` (now accepts `IHttpClientFactory` — L-2 fix), `AnthropicChatModel` |
+| `WeaveLLM.Extensions.DependencyInjection` | DI extension methods — `AddWeaveLLM()` → `WeaveLLMBuilder`, then `.AddOpenAI(apiKey, modelId?)` (L-3 fix) |
 
 **Breaking change from 0.1.0-alpha:** `Message`, `LLMOptions`, and `MessageRole` moved from `WeaveLLM.Core.Providers` into `WeaveLLM.Core.Models`. `MessageRole` was renamed to `Role`.
 
@@ -127,39 +128,53 @@ await foreach (var token in _chatModel.StreamChatAsync(messages, new LLMOptions 
 
 `ILanguageModel.StreamCompleteAsync(string, LLMOptions, ct)` also exists for single-turn plain-string flows.
 
-### `OpenAIChatModel` constructor takes a concrete `HttpClient`, not `IHttpClientFactory`
+### `IChatModel` DI registration — use `AddWeaveLLM().AddOpenAI()` (L-2 + L-3 fix, 0.2.1-alpha)
+
+`WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha` resolves both L-2 and L-3. The manual `IChatModel` factory delegate is replaced by the fluent builder:
 
 ```csharp
-new OpenAIChatModel(string apiKey, string modelId, string baseUrl, HttpClient httpClient)
+// WeaveLLM builder config keys: ApiKey (matches), ModelId (our key is ChatModel — use string overload)
+services.AddWeaveLLM()
+        .AddOpenAI(
+            configuration["KnowledgeLLM:OpenAI:ApiKey"] ?? string.Empty,
+            configuration["KnowledgeLLM:OpenAI:ChatModel"] ?? "gpt-4o-mini");
 ```
 
-Workaround — call `factory.CreateClient(...)` inside the DI factory delegate:
+Reads `configuration["..."]` directly (not from `IOptions<>`) because the builder runs at registration time, not request time. The `"openai-chat"` named HttpClient registration is no longer needed — the extension manages its own HttpClient via `IHttpClientFactory` internally (L-2 fix).
 
+**`WeaveLLMBuilder.AddOpenAI` overloads:**
+- `AddOpenAI(string apiKey, string? modelId = null)` — string params, use when config key names differ
+- `AddOpenAI(IConfiguration section)` — reads `ApiKey` and `ModelId` from the section (our key is `ChatModel`, not `ModelId` — **do not use this overload**)
+
+**`AddWeaveLLM` overloads:**
+- `AddWeaveLLM()` — no config auto-scan; use this
+- `AddWeaveLLM(IConfiguration)` — auto-registers from `WeaveLLM:*` root section (not our config shape)
+
+The old `OpenAIChatModel` constructor (`new OpenAIChatModel(apiKey, modelId, baseUrl, HttpClient)`) is now deprecated in favour of the DI extension. If you ever need to construct it manually (e.g. in tests), use:
 ```csharp
-services.AddSingleton<IChatModel>(sp =>
-{
-    var opts    = sp.GetRequiredService<IOptions<KnowledgeLLMOptions>>().Value;
-    var factory = sp.GetRequiredService<IHttpClientFactory>();
-    var http    = factory.CreateClient("openai-chat");
-    return new OpenAIChatModel(opts.OpenAI.ApiKey, opts.OpenAI.ChatModel,
-                               "https://api.openai.com/v1/", http);
-});
+new OpenAIChatModel(string apiKey, string modelId, string baseUrl, IHttpClientFactory factory, string clientName)
 ```
 
 ### `WeaveLLMError` is the real error type — error code case is split by origin
 
 The actual error type is `WeaveLLMError` (namespace `WeaveLLM.Core.Models`), not `ChainError`.
 
-**All error codes are SCREAMING_SNAKE_CASE — use factory methods exclusively:**
+**All error codes are SCREAMING_SNAKE_CASE — use factory methods exclusively (full inventory reflected from 0.2.1-alpha DLL):**
 
-| Source | Code style | Example |
+| Factory method | Signature | Code |
 |---|---|---|
-| `WeaveLLMError` static factory methods | SCREAMING_SNAKE_CASE | `WeaveLLMError.InvalidInput(msg)` → `"INVALID_INPUT"` |
-| `WeaveLLMError.NotFound(msg)` | SCREAMING_SNAKE_CASE | `"NOT_FOUND"` |
-| `WeaveLLMError.Cancelled(msg, ex)` | SCREAMING_SNAKE_CASE | `"CANCELLED"` |
-| `WeaveLLMError.ProviderError(provider, msg, ex)` | SCREAMING_SNAKE_CASE | `"PROVIDER_ERROR"` |
+| `WeaveLLMError.InvalidInput` | `(string message)` | `"INVALID_INPUT"` |
+| `WeaveLLMError.InvalidConfiguration` | `(string message)` | `"INVALID_CONFIGURATION"` |
+| `WeaveLLMError.NotFound` | `(string message)` | `"NOT_FOUND"` |
+| `WeaveLLMError.AuthenticationFailed` | `(string message)` | `"AUTHENTICATION_FAILED"` |
+| `WeaveLLMError.RateLimitExceeded` | `(string message)` | `"RATE_LIMIT_EXCEEDED"` |
+| `WeaveLLMError.ProviderError` | `(string provider, string message)` or `(..., Exception inner)` | `"PROVIDER_ERROR"` |
+| `WeaveLLMError.Cancelled` | `(string message, Exception inner)` | `"CANCELLED"` |
+| `WeaveLLMError.NetworkTimeout` | `(string message, Exception inner)` | `"NETWORK_TIMEOUT"` |
+| `WeaveLLMError.RateLimited` | `(string provider)` | `"RATE_LIMITED"` |
+| `WeaveLLMError.Timeout` | `(string chainName)` | `"TIMEOUT"` |
 
-The entire codebase now uses factory methods consistently (SCREAMING_SNAKE_CASE throughout). `KnowledgeController.MapError` was updated to match (`"INVALID_INPUT"`, `"INVALID_CONFIGURATION"`, `"NOT_FOUND"`). L-9 and L-10 are resolved.
+All production source files use factory methods exclusively — including `OpenAIEmbeddingModel.cs` (6 manual constructions replaced 17 May 2026). `KnowledgeController.MapError` checks SCREAMING_SNAKE_CASE codes (`"INVALID_INPUT"`, `"INVALID_CONFIGURATION"`, `"NOT_FOUND"`). L-9 and L-10 fully resolved.
 
 **Rule:** never use `new WeaveLLMError(msg, "SomeCode", ex)` directly — always use a factory method.
 
@@ -234,7 +249,8 @@ primary namespace only contains chat/LLM types — **done for `WeaveLLM.Core.Pro
 ### L-2 — `OpenAIChatModel` constructor takes `HttpClient`, not `IHttpClientFactory`
 
 **Severity:** Medium — forces boilerplate, breaks clean DI pattern  
-**Discovered in:** Task 3-A
+**Discovered in:** Task 3-A  
+**Resolved (08 May 2026):** `WeaveLLM.Providers 0.2.1-alpha` adds an `IHttpClientFactory` overload. Use `AddWeaveLLM().AddOpenAI()` from `WeaveLLM.Extensions.DependencyInjection` — the raw `HttpClient` constructor is deprecated.
 
 **Problem:**  
 Constructor signature: `new OpenAIChatModel(string apiKey, string modelId, string baseUrl, HttpClient httpClient)`.
@@ -259,7 +275,8 @@ named client and the model together, hiding the concrete `HttpClient` internally
 ### L-3 — No `IServiceCollection` extension methods in `WeaveLLM.Providers`
 
 **Severity:** Medium — every project writes the same boilerplate  
-**Discovered in:** Task 3-A
+**Discovered in:** Task 3-A  
+**Resolved (08 May 2026):** `WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha` ships the fluent builder. See Section 2-B for the `AddWeaveLLM().AddOpenAI()` pattern and the config key mapping note.
 
 **Problem:**  
 `WeaveLLM.Providers` ships no DI helpers. Every project must write and maintain:
@@ -840,11 +857,14 @@ All production code uses factory methods (SCREAMING_SNAKE_CASE). Controller upda
 
 ### KnowledgeLLM.Core.csproj
 ```xml
-<PackageReference Include="WeaveLLM.Core" Version="0.2.0-alpha" />
-<PackageReference Include="WeaveLLM.Providers" Version="0.2.0-alpha" />
+<PackageReference Include="WeaveLLM.Core" Version="0.2.1-alpha" />
+<PackageReference Include="WeaveLLM.Providers" Version="0.2.1-alpha" />
+<PackageReference Include="WeaveLLM.Extensions.DependencyInjection" Version="0.2.1-alpha" />
 <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
 <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
 <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+<PackageReference Include="OpenTelemetry" Version="1.10.0" />
+<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
 <PackageReference Include="Npgsql" Version="8.0.5" />
 <PackageReference Include="Pgvector" Version="0.3.2" />
 ```

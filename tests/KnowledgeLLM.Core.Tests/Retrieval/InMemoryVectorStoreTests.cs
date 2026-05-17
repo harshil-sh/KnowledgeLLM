@@ -61,7 +61,7 @@ public sealed class InMemoryVectorStoreTests
         var result = await sut.SearchAsync(new[] { 1f, 0f }, topK: 3, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     [Theory]

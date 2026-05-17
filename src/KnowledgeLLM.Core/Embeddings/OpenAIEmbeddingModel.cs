@@ -112,10 +112,9 @@ public sealed class OpenAIEmbeddingModel : IEmbeddingModel
         if (!string.IsNullOrWhiteSpace(_options.OpenAI.ApiKey))
             return null;
 
-        return ChainResult<T>.Failure(new WeaveLLMError(
+        return ChainResult<T>.Failure(WeaveLLMError.InvalidConfiguration(
             "OpenAI API key is not configured. Set KnowledgeLLM:OpenAI:ApiKey in " +
-            "appsettings.json or via KNOWLEDGELLM__OPENAI__APIKEY environment variable.",
-            "INVALID_CONFIGURATION"));
+            "appsettings.json or via KNOWLEDGELLM__OPENAI__APIKEY environment variable."));
     }
 
     private static ChainResult<T>? MapHttpError<T>(HttpResponseMessage response)
@@ -126,32 +125,29 @@ public sealed class OpenAIEmbeddingModel : IEmbeddingModel
         var statusCode = (int)response.StatusCode;
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
-            return ChainResult<T>.Failure(new WeaveLLMError(
-                "OpenAI rejected the API key. Verify it is valid at platform.openai.com/api-keys.",
-                "AUTHENTICATION_FAILED"));
+            return ChainResult<T>.Failure(WeaveLLMError.AuthenticationFailed(
+                "OpenAI rejected the API key. Verify it is valid at platform.openai.com/api-keys."));
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            return ChainResult<T>.Failure(new WeaveLLMError(
-                "OpenAI returned 429. Reduce request frequency or add retry logic.",
-                "RATE_LIMIT_EXCEEDED"));
+            return ChainResult<T>.Failure(WeaveLLMError.RateLimitExceeded(
+                "OpenAI returned 429. Reduce request frequency or add retry logic."));
 
         if (statusCode >= 500)
-            return ChainResult<T>.Failure(new WeaveLLMError(
+            return ChainResult<T>.Failure(WeaveLLMError.ProviderError(
+                "OpenAI",
                 $"OpenAI returned {statusCode}. This is likely transient — retry the request.",
-                "PROVIDER_ERROR",
                 new HttpRequestException($"HTTP {statusCode}")));
 
-        return ChainResult<T>.Failure(new WeaveLLMError(
-            $"OpenAI returned unexpected status {statusCode}.",
-            "PROVIDER_ERROR"));
+        return ChainResult<T>.Failure(WeaveLLMError.ProviderError(
+            "OpenAI",
+            $"OpenAI returned unexpected status {statusCode}."));
     }
 
     private static ChainResult<T> BuildCancelledOrTimeoutError<T>(TaskCanceledException ex, CancellationToken ct) =>
         ct.IsCancellationRequested
-            ? ChainResult<T>.Failure(new WeaveLLMError("Request cancelled.", "CANCELLED", ex))
-            : ChainResult<T>.Failure(new WeaveLLMError(
-                "Request to OpenAI timed out. Check network connectivity or increase HttpClient timeout.",
-                "NETWORK_TIMEOUT", ex));
+            ? ChainResult<T>.Failure(WeaveLLMError.Cancelled("Request cancelled.", ex))
+            : ChainResult<T>.Failure(WeaveLLMError.NetworkTimeout(
+                "Request to OpenAI timed out. Check network connectivity or increase HttpClient timeout.", ex));
 }
 
 // ---- Private DTOs ----------------------------------------------------------

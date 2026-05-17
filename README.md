@@ -5,7 +5,7 @@
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A lightweight **Retrieval-Augmented Generation (RAG)** API built on .NET 8 and [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Point it at a folder of `.txt` or `.pdf` files, call `/index`, then ask questions against the indexed content via `/ask` or stream tokens from `/ask/stream`. The pipeline embeds chunks with OpenAI, stores them in-memory (or in PostgreSQL/pgvector), and grounds answers using a retrieved-context prompt.
+**KnowledgeLLM** is a lightweight RAG (Retrieval-Augmented Generation) API built on .NET 8 and [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Point it at a folder of `.txt` or `.pdf` files, call `/index` to embed and store document chunks, then call `/ask` (or `/ask/stream` for Server-Sent Events) to get answers grounded in that content — powered by OpenAI embeddings and chat completion, with an optional PostgreSQL/pgvector backend for persistent storage.
 
 ---
 
@@ -13,9 +13,9 @@ A lightweight **Retrieval-Augmented Generation (RAG)** API built on .NET 8 and [
 
 | Requirement | Notes |
 |---|---|
-| [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) | `dotnet --version` should print `8.*` |
+| [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) | `dotnet --version` → `8.*` |
 | OpenAI API key | `sk-…` — used for embeddings and chat completion |
-| PostgreSQL + pgvector *(optional)* | Only needed when `KnowledgeLLM:PgVector:Enabled` is `true` |
+| PostgreSQL + pgvector *(optional)* | Only required when `KnowledgeLLM:PgVector:Enabled` is `true` |
 
 ---
 
@@ -32,7 +32,7 @@ dotnet user-secrets --project src/KnowledgeLLM.Api \
 
 # 3. Run
 dotnet run --project src/KnowledgeLLM.Api
-# → Swagger UI: http://localhost:5000/swagger
+# Swagger UI → http://localhost:5000/swagger
 ```
 
 ### Index documents
@@ -41,10 +41,10 @@ dotnet run --project src/KnowledgeLLM.Api
 curl -s -X POST http://localhost:5000/api/knowledge/index \
   -H "Content-Type: application/json" \
   -d '{"source": "/path/to/docs"}' | jq
-# {"chunksIndexed": 42, "source": "/path/to/docs"}
+# { "chunksIndexed": 42, "source": "/path/to/docs" }
 ```
 
-`source` may be a directory (all `.txt` / `.pdf` files are loaded recursively) or a single file path.
+`source` can be a directory (`.txt` / `.pdf` files loaded recursively) or a single file path.
 
 ### Ask a question
 
@@ -52,7 +52,7 @@ curl -s -X POST http://localhost:5000/api/knowledge/index \
 curl -s -X POST http://localhost:5000/api/knowledge/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What is the refund policy?", "topK": 5}' | jq
-# {"answer": "...", "sources": [...]}
+# { "answer": "...", "sources": [ { "chunkId": "...", "score": 0.91, ... } ] }
 ```
 
 ### Stream tokens (Server-Sent Events)
@@ -71,20 +71,20 @@ curl -N -X POST http://localhost:5000/api/knowledge/ask/stream \
 
 ## Configuration
 
-All keys live under the `KnowledgeLLM` section in `appsettings.json` or environment variables (e.g. `KNOWLEDGELLM__OPENAI__APIKEY`).
+Keys live under the `KnowledgeLLM` section in `appsettings.json`, or as environment variables using double-underscore separators (e.g. `KNOWLEDGELLM__OPENAI__APIKEY`).
 
 | Key | Default | Description |
 |---|---|---|
-| `KnowledgeLLM:OpenAI:ApiKey` | *(required)* | OpenAI API key |
-| `KnowledgeLLM:OpenAI:EmbeddingModel` | `text-embedding-3-small` | Embedding model name |
-| `KnowledgeLLM:OpenAI:EmbeddingDimensions` | `1536` | Vector dimensions — must match the model |
-| `KnowledgeLLM:OpenAI:ChatModel` | `gpt-4o-mini` | Chat completion model name |
-| `KnowledgeLLM:Chunker:ChunkSize` | `500` | Max characters per chunk |
-| `KnowledgeLLM:Chunker:Overlap` | `100` | Overlap characters between consecutive chunks |
-| `KnowledgeLLM:PgVector:Enabled` | `false` | `true` → use PostgreSQL/pgvector; `false` → in-memory |
+| `KnowledgeLLM:OpenAI:ApiKey` | *(required)* | OpenAI secret key for embeddings and chat |
+| `KnowledgeLLM:OpenAI:EmbeddingModel` | `text-embedding-3-small` | OpenAI embedding model name |
+| `KnowledgeLLM:OpenAI:EmbeddingDimensions` | `1536` | Vector dimensions — must match the chosen model |
+| `KnowledgeLLM:OpenAI:ChatModel` | `gpt-4o-mini` | OpenAI chat completion model name |
+| `KnowledgeLLM:Chunker:ChunkSize` | `500` | Maximum characters per chunk |
+| `KnowledgeLLM:Chunker:Overlap` | `100` | Overlapping characters between consecutive chunks |
+| `KnowledgeLLM:PgVector:Enabled` | `false` | `true` → PostgreSQL/pgvector store; `false` → in-memory |
 | `KnowledgeLLM:PgVector:ConnectionString` | *(empty)* | Npgsql connection string (required when enabled) |
 
-**PDF support** is opt-in. Call `services.AddPdfDocumentLoader()` after `AddKnowledgeLLM(...)` in `Program.cs` to enable loading `.pdf` files alongside `.txt`.
+> **PDF support** is opt-in: call `services.AddPdfDocumentLoader()` after `AddKnowledgeLLM(...)` in `Program.cs`.
 
 ---
 
@@ -96,19 +96,19 @@ INDEX FLOW
   source path
     │
     ▼
-  IDocumentLoader.LoadAsync()          reads .txt / .pdf files from disk
+  IDocumentLoader.LoadAsync()        reads .txt / .pdf files from disk
     │
     ▼
-  ITextChunker.ChunkAsync()            sliding-window split → TextChunk[]
+  ITextChunker.ChunkAsync()          sliding-window split → TextChunk[]
     │
     ▼
-  IEmbeddingModel.EmbedBatchAsync()    OpenAI embeddings → float[][]
+  IEmbeddingModel.EmbedBatchAsync()  OpenAI embeddings → float[][]
     │
     ▼
-  IVectorStore.UpsertAsync()           store (chunk, vector) pairs
+  IVectorStore.UpsertAsync()         persists (chunk, vector) pairs
     │
     ▼
-  int  (chunks indexed)
+  int  ← chunks indexed
 
 
 QUERY FLOW
@@ -116,22 +116,22 @@ QUERY FLOW
   question (string)
     │
     ▼
-  IEmbeddingModel.EmbedAsync()         embed the question → float[]
+  IEmbeddingModel.EmbedAsync()       embed the question → float[]
     │
     ▼
-  IVectorStore.SearchAsync()           cosine similarity, top-K results
+  IVectorStore.SearchAsync()         cosine similarity, top-K results
     │
     ▼
-  PromptBuilder.BuildRagPrompt()       format grounded prompt (static)
+  PromptBuilder.BuildRagPrompt()     format grounded prompt (static helper)
     │
     ▼
-  IChatModel.ChatAsync()               OpenAI chat completion
+  IChatModel.ChatAsync()             OpenAI chat completion
     │
     ▼
   RagAnswer { Answer, Sources[] }
 ```
 
-`RagPipeline` orchestrates both flows. Any stage failure short-circuits immediately — no subsequent stages run.
+`RagPipeline` orchestrates both flows. Any stage failure short-circuits immediately — subsequent stages do not run.
 
 ---
 
@@ -146,7 +146,7 @@ KnowledgeLLM/
 │   │   └── Program.cs
 │   └── KnowledgeLLM.Core/
 │       ├── Chunking/                    # SlidingWindowChunker
-│       ├── Configuration/               # KnowledgeLLMOptions (+ PgVectorOptions)
+│       ├── Configuration/               # KnowledgeLLMOptions, PgVectorOptions
 │       ├── Documents/                   # PlainTextDocumentLoader, PdfDocumentLoader,
 │       │                                #   CompositeDocumentLoader
 │       ├── Embeddings/                  # OpenAIEmbeddingModel
@@ -165,9 +165,9 @@ KnowledgeLLM/
 |---|---|---|
 | 1 | ✅ Complete | Core interfaces, plain-text loader, sliding-window chunker, in-memory vector store, API shell |
 | 2 | ✅ Complete | OpenAI embedding model, config binding, HTTP client factory wiring |
-| 3 | ✅ Complete | `IChatModel` via `WeaveLLM.Providers` (OpenAIChatModel), streaming SSE endpoint |
+| 3 | ✅ Complete | `IChatModel` via `WeaveLLM.Providers` (`OpenAIChatModel`), streaming SSE endpoint |
 | 4 | ✅ Complete | PostgreSQL/pgvector store, PDF document loader, composite loader DI extension |
-| 5 | ⏳ Pending | PDF/Word loader improvements, OpenTelemetry observability, rate-limit retry policy |
+| 5 | ⏳ Pending | Word document loader, OpenTelemetry observability, rate-limit retry policy |
 
 ---
 

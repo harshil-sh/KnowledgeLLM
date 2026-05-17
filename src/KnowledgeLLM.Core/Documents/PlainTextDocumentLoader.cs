@@ -45,17 +45,17 @@ public sealed class PlainTextDocumentLoader : IDocumentLoader
             }
 
             return ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError($"Path not found: {source}", "NotFound", null));
+                WeaveLLMError.NotFound($"Path not found: {source}"));
         }
         catch (OperationCanceledException ex)
         {
             return ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError("Operation was cancelled.", "Cancelled", ex));
+                WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
         catch (Exception ex)
         {
             return ChainResult<IReadOnlyList<Document>>.Failure(
-                new WeaveLLMError(ex.Message, "ProviderError", ex));
+                WeaveLLMError.ProviderError("FileSystem", ex.Message, ex));
         }
     }
 }

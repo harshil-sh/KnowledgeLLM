@@ -122,7 +122,7 @@ public sealed class PgVectorStoreTests
             new[] { MakeChunk("d1", 0) }, new[] { new[] { 1f, 0f } }, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public sealed class PgVectorStoreTests
             new[] { MakeChunk("d1", 0) }, new[] { new[] { 1f, 0f } }, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class PgVectorStoreTests
         var result = await sut.SearchAsync(new[] { 1f, 0f }, 3, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("NotFound");
+        result.Error.Code.Should().Be("NOT_FOUND");
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class PgVectorStoreTests
         var result = await sut.SearchAsync(new[] { 1f, 0f }, 1, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     // ── DeleteByDocumentAsync ─────────────────────────────────────────────────
@@ -278,7 +278,7 @@ public sealed class PgVectorStoreTests
         var result = await sut.DeleteByDocumentAsync("doc1", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("ProviderError");
+        result.Error.Code.Should().Be("PROVIDER_ERROR");
     }
 
     // ── Cancellation ──────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ public sealed class PgVectorStoreTests
             new[] { MakeChunk("d1", 0) }, new[] { new[] { 1f, 0f } }, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public sealed class PgVectorStoreTests
         var result = await BuildSut().SearchAsync(new[] { 1f, 0f }, 1, cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public sealed class PgVectorStoreTests
         var result = await BuildSut().DeleteByDocumentAsync("doc1", cts.Token);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -334,7 +334,7 @@ public sealed class PgVectorStoreTests
             new[] { MakeChunk("d1", 0) }, new[] { new[] { 1f, 0f } }, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public sealed class PgVectorStoreTests
         var result = await sut.SearchAsync(new[] { 1f, 0f }, 1, CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 
     [Fact]
@@ -362,6 +362,6 @@ public sealed class PgVectorStoreTests
         var result = await sut.DeleteByDocumentAsync("doc1", CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Code.Should().Be("Cancelled");
+        result.Error.Code.Should().Be("CANCELLED");
     }
 }

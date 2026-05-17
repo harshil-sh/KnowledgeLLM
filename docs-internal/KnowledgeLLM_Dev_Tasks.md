@@ -651,6 +651,41 @@ Update CLAUDE.md to reflect the completed project state:
 - **`WeaveLLM.Core.Models.IEmbeddingModel` now conflicts in more files** — importing `using WeaveLLM.Core.Models;` (needed for `ChainResult<T>`) now pulls in `WeaveLLM.Core.Models.IEmbeddingModel`, causing CS0104 in any file that also has `using KnowledgeLLM.Core.Embeddings;`. Fix: replace the `using KnowledgeLLM.Core.Embeddings;` directive with an explicit alias `using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;`.
 - **`Microsoft.Extensions.*` dependencies bumped to 9.0.x** — `WeaveLLM.Core 0.2.0-alpha` and `WeaveLLM.Providers 0.2.0-alpha` require `Microsoft.Extensions.DependencyInjection.Abstractions >= 9.0.0`, `Logging.Abstractions >= 9.0.0`, and `Http >= 9.0.0`. Our pinned 8.x versions triggered NU1605 (downgrade detected, treated as error). Updated all three to `9.0.0` in `KnowledgeLLM.Core.csproj`.
 
+### Full factory method inventory + streaming/test cleanup — 08 May 2026
+
+- **Reflected `WeaveLLM.Core.dll 0.2.1-alpha`** to enumerate all `WeaveLLMError` static factory methods. Complete inventory (all SCREAMING_SNAKE_CASE):
+
+  | Factory method | Signature | Code |
+  |---|---|---|
+  | `InvalidInput` | `(string message)` | `INVALID_INPUT` |
+  | `InvalidConfiguration` | `(string message)` | `INVALID_CONFIGURATION` |
+  | `NotFound` | `(string message)` | `NOT_FOUND` |
+  | `AuthenticationFailed` | `(string message)` | `AUTHENTICATION_FAILED` |
+  | `RateLimitExceeded` | `(string message)` | `RATE_LIMIT_EXCEEDED` |
+  | `ProviderError` | `(string provider, string message[, Exception])` | `PROVIDER_ERROR` |
+  | `Cancelled` | `(string message, Exception)` | `CANCELLED` |
+  | `NetworkTimeout` | `(string message, Exception)` | `NETWORK_TIMEOUT` |
+  | `RateLimited` | `(string provider)` | `RATE_LIMITED` |
+  | `Timeout` | `(string chainName)` | `TIMEOUT` |
+
+- **L-10 fully resolved** — all 10 factory methods now exist; no operational code requires a raw `new WeaveLLMError(msg, "code", ex)` construction. (`OpenAIEmbeddingModel.cs` had 6 remaining manual constructions missed at the time — replaced 17 May 2026.)
+- **`RagPipeline.cs` streaming tokens fixed** — 3 hardcoded PascalCase error prefixes in `AskStreamAsync` updated: `[ERROR:InvalidInput]` → `[ERROR:INVALID_INPUT]` (×2), `[ERROR:NotFound]` → `[ERROR:NOT_FOUND]`.
+- **`RagPipelineTests.cs` updated** — 5 `new WeaveLLMError(msg, PascalCase, null)` mock constructions replaced with factory methods; 5 `.Should().Be("PascalCase")` assertions updated to SCREAMING_SNAKE_CASE.
+- **`RagPipelineStreamingTests.cs` updated** — 2 `new WeaveLLMError(...)` constructions replaced with `WeaveLLMError.ProviderError()`; 3 `StartWith("[ERROR:PascalCase]")` assertions updated. All 172 tests pass.
+
+### L-2 + L-3 resolved — WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha — 08 May 2026
+
+- **Added `WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha`** to `KnowledgeLLM.Core.csproj`. Package ships a fluent builder: `services.AddWeaveLLM().AddOpenAI(apiKey, modelId)` — resolves L-3 (no more manual factory boilerplate).
+- **`OpenAIChatModel` now accepts `IHttpClientFactory`** — L-2 resolved. The `"openai-chat"` named HttpClient registration and the manual `IChatModel` factory delegate are both removed from `ServiceCollectionExtensions.cs`.
+- **Config key mismatch** — WeaveLLM builder expects `ModelId`; our config uses `ChatModel`. Used the string-param overload `AddOpenAI(configuration["KnowledgeLLM:OpenAI:ApiKey"], configuration["KnowledgeLLM:OpenAI:ChatModel"])` to bridge the difference. Documented in a comment at the call site.
+- **Transitive version bumps required** (NU1605 — `WeaveLLM.Extensions.DependencyInjection 0.2.1-alpha` pulls newer minimums):
+  - `WeaveLLM.Core`: `0.2.0-alpha` → `0.2.1-alpha`
+  - `WeaveLLM.Providers`: `0.2.0-alpha` → `0.2.1-alpha`
+  - `OpenTelemetry`: `1.8.1` → `1.10.0`
+  - `OpenTelemetry.Extensions.Hosting`: `1.8.1` → `1.10.0`
+  - `OpenTelemetry.Exporter.Console` / `OpenTelemetryProtocol` (in `KnowledgeLLM.Api.csproj`): `1.8.1` → `1.10.0`
+- `dotnet build` passes with 0 errors.
+
 ### L-1 resolution verification — 08 May 2026
 
 - **`WeaveLLM.Core.Providers.IEmbeddingModel` moved to `WeaveLLM.Core.Providers.Embeddings`** — No code changes required. All four affected files (`RagPipeline.cs`, `RagPipelineTests.cs`, `RagPipelineIntegrationTests.cs`, `ServiceCollectionExtensions.cs`) already alias `IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel` (our own interface) — the WeaveLLM-internal move has zero impact on the call sites. `dotnet build` passes with 0 errors.

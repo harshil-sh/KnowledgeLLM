@@ -73,7 +73,7 @@ public sealed class KnowledgeController : ControllerBase
     private IActionResult MapError(string code, string message)
     {
         var body = new ErrorResponse(code, message);
-        return code is "InvalidInput" or "InvalidConfiguration" or "NotFound"
+        return code is "INVALID_INPUT" or "INVALID_CONFIGURATION" or "NOT_FOUND"
             ? BadRequest(body)
             : StatusCode(500, body);
     }

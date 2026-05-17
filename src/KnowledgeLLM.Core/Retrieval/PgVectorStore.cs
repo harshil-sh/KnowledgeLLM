@@ -46,9 +46,9 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
         {
             await _initLock.WaitAsync(ct);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return ChainResult<bool>.Failure(new WeaveLLMError("Operation was cancelled.", "Cancelled", null));
+            return ChainResult<bool>.Failure(WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
 
         try
@@ -59,14 +59,14 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
             _schemaInitialized = true;
             return ChainResult<bool>.Success(true);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return ChainResult<bool>.Failure(new WeaveLLMError("Operation was cancelled.", "Cancelled", null));
+            return ChainResult<bool>.Failure(WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
         catch (Exception ex)
         {
-            return ChainResult<bool>.Failure(new WeaveLLMError(
-                $"Failed to initialise database schema: {ex.Message}", "ProviderError", ex));
+            return ChainResult<bool>.Failure(
+                WeaveLLMError.ProviderError("PostgreSQL", $"Failed to initialise database schema: {ex.Message}", ex));
         }
         finally
         {
@@ -111,14 +111,14 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
 
             return ChainResult<int>.Success(inserted);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return ChainResult<int>.Failure(new WeaveLLMError("Operation was cancelled.", "Cancelled", null));
+            return ChainResult<int>.Failure(WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
         catch (Exception ex)
         {
-            return ChainResult<int>.Failure(new WeaveLLMError(
-                $"Database error during upsert: {ex.Message}", "ProviderError", ex));
+            return ChainResult<int>.Failure(
+                WeaveLLMError.ProviderError("PostgreSQL", $"Database error during upsert: {ex.Message}", ex));
         }
     }
 
@@ -152,7 +152,7 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
 
             if (rows.Count == 0)
                 return ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
-                    new WeaveLLMError("The vector store contains no chunks.", "NotFound", null));
+                    WeaveLLMError.NotFound("The vector store contains no chunks."));
 
             var results = rows.Select(row =>
             {
@@ -164,15 +164,15 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
 
             return ChainResult<IReadOnlyList<RetrievalResult>>.Success(results.AsReadOnly());
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
             return ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
-                new WeaveLLMError("Operation was cancelled.", "Cancelled", null));
+                WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
         catch (Exception ex)
         {
-            return ChainResult<IReadOnlyList<RetrievalResult>>.Failure(new WeaveLLMError(
-                $"Database error during search: {ex.Message}", "ProviderError", ex));
+            return ChainResult<IReadOnlyList<RetrievalResult>>.Failure(
+                WeaveLLMError.ProviderError("PostgreSQL", $"Database error during search: {ex.Message}", ex));
         }
     }
 
@@ -192,14 +192,14 @@ public sealed class PgVectorStore : IVectorStore, IAsyncDisposable
             var deleted = await _db.DeleteRowsByDocumentAsync(documentId, ct);
             return ChainResult<int>.Success(deleted);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            return ChainResult<int>.Failure(new WeaveLLMError("Operation was cancelled.", "Cancelled", null));
+            return ChainResult<int>.Failure(WeaveLLMError.Cancelled("Operation was cancelled.", ex));
         }
         catch (Exception ex)
         {
-            return ChainResult<int>.Failure(new WeaveLLMError(
-                $"Database error during delete: {ex.Message}", "ProviderError", ex));
+            return ChainResult<int>.Failure(
+                WeaveLLMError.ProviderError("PostgreSQL", $"Database error during delete: {ex.Message}", ex));
         }
     }
 
