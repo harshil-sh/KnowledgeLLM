@@ -17,6 +17,9 @@ public class KnowledgeLLMOptions
 
     /// <summary>HTTP API authentication settings.</summary>
     public ApiOptions Api { get; set; } = new();
+
+    /// <summary>Rate-limiting settings for the HTTP API endpoints.</summary>
+    public RateLimitOptions RateLimit { get; set; } = new();
 }
 
 /// <summary>Configuration options for the OpenAI client.</summary>
@@ -53,6 +56,22 @@ public class ApiOptions
     /// When empty, authentication is bypassed entirely (zero-config local dev).
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
+}
+
+/// <summary>Rate-limiting options applied to the HTTP API endpoints.</summary>
+public class RateLimitOptions
+{
+    /// <summary>Maximum number of index requests allowed per <see cref="WindowSeconds"/>.</summary>
+    public int IndexPermitLimit { get; set; } = 5;
+
+    /// <summary>Maximum number of ask requests allowed per <see cref="WindowSeconds"/>.</summary>
+    public int AskPermitLimit { get; set; } = 30;
+
+    /// <summary>Duration of each rate-limit window in seconds.</summary>
+    public int WindowSeconds { get; set; } = 60;
+
+    /// <summary>Number of requests that may be queued while the window is exhausted.</summary>
+    public int QueueLimit { get; set; } = 2;
 }
 
 /// <summary>Configuration options for the PostgreSQL/pgvector vector store.</summary>

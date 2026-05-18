@@ -1,5 +1,6 @@
 using KnowledgeLLM.Core.Pipeline;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace KnowledgeLLM.Api.Controllers;
 
@@ -15,6 +16,7 @@ public sealed class KnowledgeController : ControllerBase
 
     /// <summary>Indexes all documents found at the given source path.</summary>
     [HttpPost("index")]
+    [EnableRateLimiting("index-limit")]
     public async Task<IActionResult> IndexAsync([FromBody] IndexRequest request, CancellationToken ct)
     {
         var result = await _pipeline.IndexAsync(request.Source, ct);
@@ -27,6 +29,7 @@ public sealed class KnowledgeController : ControllerBase
 
     /// <summary>Answers a question by retrieving relevant document chunks.</summary>
     [HttpPost("ask")]
+    [EnableRateLimiting("ask-limit")]
     public async Task<IActionResult> AskAsync([FromBody] AskRequest request, CancellationToken ct)
     {
         var result = await _pipeline.AskAsync(request.Question, request.TopK, ct);
@@ -47,6 +50,7 @@ public sealed class KnowledgeController : ControllerBase
     /// Each token is sent as <c>data: {token}\n\n</c>; completion is signalled with <c>data: [DONE]\n\n</c>.
     /// </summary>
     [HttpPost("ask/stream")]
+    [EnableRateLimiting("ask-limit")]
     public async Task AskStreamAsync([FromBody] AskRequest request, CancellationToken ct)
     {
         Response.ContentType = "text/event-stream";
