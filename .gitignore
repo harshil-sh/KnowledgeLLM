@@ -41,6 +41,9 @@ lcov.info
 *.log
 logs/
 
+# Claude Code local settings (may contain secrets)
+.claude/settings.local.json
+
 # Environment / secrets
 .env
 .env.*

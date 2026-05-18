@@ -1,3 +1,4 @@
+using KnowledgeLLM.Api.Middleware;
 using KnowledgeLLM.Core.Extensions;
 using OpenTelemetry.Trace;
 
@@ -28,5 +29,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<ApiKeyMiddleware>();
 app.MapControllers();
 app.Run();

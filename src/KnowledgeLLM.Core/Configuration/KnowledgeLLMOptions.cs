@@ -14,6 +14,9 @@ public class KnowledgeLLMOptions
 
     /// <summary>Optional PostgreSQL/pgvector vector store settings.</summary>
     public PgVectorOptions PgVector { get; set; } = new();
+
+    /// <summary>HTTP API authentication settings.</summary>
+    public ApiOptions Api { get; set; } = new();
 }
 
 /// <summary>Configuration options for the OpenAI client.</summary>
@@ -40,6 +43,16 @@ public class ChunkerOptions
 
     /// <summary>Number of characters that consecutive chunks share as overlap.</summary>
     public int Overlap { get; set; } = 100;
+}
+
+/// <summary>Configuration options for HTTP API authentication.</summary>
+public class ApiOptions
+{
+    /// <summary>
+    /// Expected value of the <c>X-Api-Key</c> request header.
+    /// When empty, authentication is bypassed entirely (zero-config local dev).
+    /// </summary>
+    public string ApiKey { get; set; } = string.Empty;
 }
 
 /// <summary>Configuration options for the PostgreSQL/pgvector vector store.</summary>
