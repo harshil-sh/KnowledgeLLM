@@ -1,13 +1,31 @@
 using System.Threading.RateLimiting;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using KnowledgeLLM.Api.Middleware;
+using KnowledgeLLM.Api.Validation;
 using KnowledgeLLM.Core.Configuration;
 using KnowledgeLLM.Core.Extensions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = ctx =>
+        {
+            var errors = ctx.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage);
+            var message = string.Join(" ", errors);
+            return new BadRequestObjectResult(new { code = "INVALID_INPUT", message });
+        };
+    });
+
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<AskRequestValidator>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
@@ -16,7 +34,7 @@ builder.Services.AddKnowledgeLLM(builder.Configuration);
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
-        tracing.AddSource(ServiceCollectionExtensions.PipelineActivitySourceName);
+        tracing.AddSource(KnowledgeLLM.Core.Extensions.ServiceCollectionExtensions.PipelineActivitySourceName);
 
         if (builder.Environment.IsDevelopment())
             tracing.AddConsoleExporter();
