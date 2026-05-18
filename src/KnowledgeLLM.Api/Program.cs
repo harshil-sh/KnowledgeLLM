@@ -8,8 +8,11 @@ using KnowledgeLLM.Core.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Trace;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
 
 builder.Services.AddControllers()
     .ConfigureApiBehaviorOptions(options =>
@@ -95,6 +98,15 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<ApiKeyMiddleware>();
+app.UseSerilogRequestLogging(opts =>
+{
+    opts.EnrichDiagnosticContext = (diag, httpCtx) =>
+    {
+        diag.Set("RequestPath", httpCtx.Request.Path);
+        diag.Set("StatusCode", httpCtx.Response.StatusCode);
+        diag.Set("QueryString", httpCtx.Request.QueryString);
+    };
+});
 app.UseRateLimiter();
 app.MapControllers();
 app.Run();
