@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "harness": {
+      "command": "npx",
+      "args": ["-y", "harness-mcp-v2"],
+      "env": {
+        "HARNESS_ACCOUNT_ID": "2IfOPFBjRAC6xCOYUEdYvg"
+      }
+    }
+  }
+}

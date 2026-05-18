@@ -1,12 +1,16 @@
 using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using HealthChecks.UI.Client;
+using KnowledgeLLM.Api.HealthChecks;
 using KnowledgeLLM.Api.Middleware;
 using KnowledgeLLM.Api.Validation;
 using KnowledgeLLM.Core.Configuration;
 using KnowledgeLLM.Core.Extensions;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Trace;
 using Serilog;
 
@@ -33,6 +37,25 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 builder.Services.AddKnowledgeLLM(builder.Configuration);
+
+// ── Health checks ────────────────────────────────────────────────────────────
+var pgOpts = builder.Configuration
+    .GetSection($"{KnowledgeLLMOptions.SectionName}:PgVector")
+    .Get<PgVectorOptions>() ?? new PgVectorOptions();
+
+var hcBuilder = builder.Services
+    .AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<OpenAiConnectivityCheck>("openai", tags: ["ready"]);
+
+if (pgOpts.Enabled && !string.IsNullOrWhiteSpace(pgOpts.ConnectionString))
+{
+    hcBuilder.AddNpgSql(
+        pgOpts.ConnectionString,
+        name: "postgres",
+        tags: ["ready"],
+        failureStatus: HealthStatus.Degraded);
+}
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
@@ -108,5 +131,20 @@ app.UseSerilogRequestLogging(opts =>
     };
 });
 app.UseRateLimiter();
+
+// ── Health check endpoints ───────────────────────────────────────────────────
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = c => c.Tags.Contains("live")
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = c => c.Tags.Contains("ready")
+});
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
 app.MapControllers();
 app.Run();

@@ -1,4 +1,7 @@
 {
+  "env": {
+    "HARNESS_API_KEY": "pat.2IfOPFBjRAC6xCOYUEdYvg.6a0a4b22b3636d212640e51b.tQaXmBnZADIknmuIQEz9"
+  },
   "permissions": {
     "allow": [
       "WebFetch(domain:www.nuget.org)",
@@ -53,7 +56,21 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "PowerShell(dotnet build *)",
       "Bash(dotnet list *)",
-      "Bash(dotnet-script -e \"\")"
+      "Bash(dotnet-script -e \"\")",
+      "Skill(update-config)",
+      "Bash(npx --yes @harness/mcp-server --version)",
+      "Bash(npm search *)",
+      "Bash(HARNESS_API_KEY=\"pat.2IfOPFBjRAC6xCOYUEdYvg.6a0a4b22b3636d212640e51b.tQaXmBnZADIknmuIQEz9\" HARNESS_ACCOUNT_ID=\"2IfOPFBjRAC6xCOYUEdYvg\" npx -y harness-mcp-v2 stdio)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(HARNESS_API_KEY=\"pat.2IfOPFBjRAC6xCOYUEdYvg.6a0a4b22b3636d212640e51b.tQaXmBnZADIknmuIQEz9\" HARNESS_ACCOUNT_ID=\"2IfOPFBjRAC6xCOYUEdYvg\" timeout 5 npx -y harness-mcp-v2 stdio)",
+      "Bash(echo \"---exit $?---\")",
+      "Bash(claude mcp *)",
+      "Bash(Select-String -Pattern \"error|Build succeeded|failed\")",
+      "Bash(Select-Object -Last 20)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "harness"
+  ]
 }
