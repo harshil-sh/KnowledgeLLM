@@ -1,0 +1,12 @@
+# Repository metadata managed by Probot Settings or compatible tooling.
+repository:
+  topics:
+    - dotnet
+    - csharp
+    - rag
+    - llm
+    - vector-search
+    - pgvector
+    - openai
+    - aspnetcore
+    - ai-engineering

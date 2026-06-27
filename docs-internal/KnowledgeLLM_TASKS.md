@@ -27,7 +27,7 @@
   - /ask/stream examples
   - Screenshots or GIFs
 
-- [ ] Add GitHub topics
+- [x] Add GitHub topics
   - dotnet
   - csharp
   - rag
