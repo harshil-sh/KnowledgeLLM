@@ -17,6 +17,19 @@ This makes the project useful for scenarios such as internal policy lookup, onbo
 
 ---
 
+## Production-Oriented Capabilities
+
+KnowledgeLLM is intentionally structured as more than a local RAG prototype:
+
+- **CI/CD:** GitHub Actions runs the repository test suite on every change through the `ci.yml` workflow surfaced by the README badge.
+- **Automated testing:** xUnit tests cover the core RAG building blocks, including chunking, document loading, prompt construction, pipeline behavior, and vector-store retrieval.
+- **Environment-based configuration:** All runtime settings are bound from the `KnowledgeLLM` configuration section and can be supplied through `appsettings.json`, user-secrets, or environment variables such as `KNOWLEDGELLM__OPENAI__APIKEY`.
+- **PostgreSQL/pgvector persistence:** The vector store can run in ephemeral in-memory mode for development or persist embeddings and chunks in PostgreSQL with pgvector when `KnowledgeLLM:PgVector:Enabled` is set to `true`.
+- **SSE streaming:** The `/api/knowledge/ask/stream` endpoint streams generated answer tokens with Server-Sent Events for responsive client experiences.
+- **Source-grounded responses:** `/api/knowledge/ask` returns both the generated answer and the retrieved source chunks used to ground that answer, making responses easier to inspect and validate.
+
+---
+
 ## Prerequisites
 
 | Requirement | Notes |
