@@ -42,7 +42,7 @@
 
 ## Phase 2 - Senior Engineer Signal
 
-- [ ] Add docker-compose support
+- [x] Add docker-compose support
   - KnowledgeLLM API
   - PostgreSQL
   - pgvector

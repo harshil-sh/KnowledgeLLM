@@ -1,0 +1,45 @@
+services:
+  knowledgellm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: knowledgellm-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      KnowledgeLLM__OpenAI__ApiKey: ${KNOWLEDGELLM__OPENAI__APIKEY:-}
+      KnowledgeLLM__OpenAI__EmbeddingModel: ${KNOWLEDGELLM__OPENAI__EMBEDDINGMODEL:-text-embedding-3-small}
+      KnowledgeLLM__OpenAI__ChatModel: ${KNOWLEDGELLM__OPENAI__CHATMODEL:-gpt-4o-mini}
+      KnowledgeLLM__OpenAI__EmbeddingDimensions: ${KNOWLEDGELLM__OPENAI__EMBEDDINGDIMENSIONS:-1536}
+      KnowledgeLLM__Api__ApiKey: ${KNOWLEDGELLM__API__APIKEY:-}
+      KnowledgeLLM__PgVector__Enabled: "true"
+      KnowledgeLLM__PgVector__ConnectionString: Host=postgres;Port=5432;Database=${POSTGRES_DB:-knowledgellm};Username=${POSTGRES_USER:-knowledgellm};Password=${POSTGRES_PASSWORD:-knowledgellm_dev_password}
+    ports:
+      - "${KNOWLEDGELLM_API_PORT:-5000}:8080"
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-knowledgellm}
+      POSTGRES_USER: ${POSTGRES_USER:-knowledgellm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knowledgellm_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knowledgellm} -d ${POSTGRES_DB:-knowledgellm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
