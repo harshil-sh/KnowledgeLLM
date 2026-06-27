@@ -20,7 +20,7 @@
   - Include query flow
   - Include component interaction diagram
 
-- [ ] Add demo documentation
+- [x] Add demo documentation
   - docs/demo.md
   - /index examples
   - /ask examples
