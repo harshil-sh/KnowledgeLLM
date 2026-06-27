@@ -2,7 +2,7 @@
 
 ## Phase 1 - CV Alignment (Highest Priority)
 
-- [ ] Add README section: "Why this project exists"
+- [x] Add README section: "Why this project exists"
   - Position KnowledgeLLM as a practical RAG application built on WeaveLLM.Core.
   - Explain document-grounded question answering use case.
 
