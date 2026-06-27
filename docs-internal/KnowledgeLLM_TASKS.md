@@ -14,7 +14,7 @@
   - SSE streaming
   - Source-grounded responses
 
-- [ ] Add architecture documentation
+- [x] Add architecture documentation
   - Create docs/architecture.md
   - Include indexing flow
   - Include query flow
