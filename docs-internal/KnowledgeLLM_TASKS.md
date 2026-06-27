@@ -6,7 +6,7 @@
   - Position KnowledgeLLM as a practical RAG application built on WeaveLLM.Core.
   - Explain document-grounded question answering use case.
 
-- [ ] Add README section: "Production-Oriented Capabilities"
+- [x] Add README section: "Production-Oriented Capabilities"
   - CI/CD
   - Automated testing
   - Environment-based configuration
