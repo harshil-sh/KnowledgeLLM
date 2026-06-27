@@ -9,6 +9,14 @@
 
 ---
 
+## Why this project exists
+
+KnowledgeLLM exists to demonstrate a practical, document-grounded question answering application built on top of [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Rather than treating retrieval-augmented generation as an abstract pattern, the API gives teams a focused workflow: index local `.txt` and `.pdf` knowledge sources, retrieve the most relevant chunks for a user question, and generate an answer that is explicitly grounded in those retrieved sources.
+
+This makes the project useful for scenarios such as internal policy lookup, onboarding guides, support knowledge bases, and technical documentation assistants where answers should stay tied to source material instead of relying on model memory alone.
+
+---
+
 ## Prerequisites
 
 | Requirement | Notes |
