@@ -48,7 +48,7 @@
   - pgvector
   - .env.example
 
-- [ ] Add docs/configuration.md
+- [x] Add docs/configuration.md
   - Local development
   - In-memory mode
   - PostgreSQL mode
