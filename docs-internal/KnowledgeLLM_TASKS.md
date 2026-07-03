@@ -60,7 +60,7 @@
   - Path validation
   - Prompt injection considerations
 
-- [ ] Add docs/testing.md
+- [x] Add docs/testing.md
   - Unit testing approach
   - Integration testing approach
   - CI workflow explanation
