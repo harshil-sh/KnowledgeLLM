@@ -54,7 +54,7 @@
   - PostgreSQL mode
   - Environment variable reference
 
-- [ ] Add docs/security.md
+- [x] Add docs/security.md
   - API key handling
   - File restrictions
   - Path validation
