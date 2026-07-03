@@ -78,7 +78,7 @@
   - Source relevance
   - Grounding validation
 
-- [ ] Add latency metrics
+- [x] Add latency metrics
   - Indexing latency
   - Retrieval latency
   - LLM response latency

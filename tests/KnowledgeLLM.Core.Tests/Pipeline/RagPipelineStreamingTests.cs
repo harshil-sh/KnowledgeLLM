@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Pipeline;
@@ -28,7 +29,7 @@ public sealed class RagPipelineStreamingTests
             _store,
             _fakeChat,
             NullLogger<RagPipeline>.Instance,
-            new ActivitySource("test"));
+            new ActivitySource("test"), new KnowledgeLlmMetrics(new Meter("test")));
     }
 
     private static TextChunk MakeChunk(string docId = "doc1", int idx = 0) =>

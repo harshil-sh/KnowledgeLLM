@@ -22,6 +22,7 @@ public sealed class RagPipeline : IRagPipeline
     private readonly IChatModel _chatModel;
     private readonly ILogger<RagPipeline> _logger;
     private readonly ActivitySource _activitySource;
+    private readonly KnowledgeLlmMetrics _metrics;
 
     /// <summary>Initialises the pipeline with all required dependencies.</summary>
     public RagPipeline(
@@ -31,7 +32,8 @@ public sealed class RagPipeline : IRagPipeline
         IVectorStore vectorStore,
         IChatModel chatModel,
         ILogger<RagPipeline> logger,
-        ActivitySource activitySource)
+        ActivitySource activitySource,
+        KnowledgeLlmMetrics metrics)
     {
         _loader = loader;
         _chunker = chunker;
@@ -40,6 +42,7 @@ public sealed class RagPipeline : IRagPipeline
         _chatModel = chatModel;
         _logger = logger;
         _activitySource = activitySource;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -50,92 +53,102 @@ public sealed class RagPipeline : IRagPipeline
     /// <param name="ct">Cancellation token.</param>
     public async Task<ChainResult<int>> IndexAsync(string source, CancellationToken ct)
     {
+        var indexStart = Stopwatch.GetTimestamp();
+        var indexSucceeded = false;
         using var indexActivity = _activitySource.StartActivity("knowledge.index");
         indexActivity?.SetTag("document.source", source);
 
-        if (string.IsNullOrWhiteSpace(source))
+        try
         {
-            _logger.LogWarning("IndexAsync called with null or whitespace source.");
-            var err = WeaveLLMError.InvalidInput("source must not be null or whitespace.");
-            MarkError(indexActivity, err.Code, err.Message);
-            return ChainResult<int>.Failure(err);
-        }
-
-        _logger.LogInformation("Loading documents from {Source}", source);
-        ChainResult<IReadOnlyList<Document>> loadResult;
-        using (var loadActivity = _activitySource.StartActivity("knowledge.load"))
-        {
-            loadResult = await _loader.LoadAsync(source, ct);
-            if (!loadResult.IsSuccess)
+            if (string.IsNullOrWhiteSpace(source))
             {
-                _logger.LogError("Load failed [{Code}]: {Message}", loadResult.Error.Code, loadResult.Error.Message);
-                MarkError(loadActivity, loadResult.Error.Code, loadResult.Error.Message);
-                MarkError(indexActivity, loadResult.Error.Code, loadResult.Error.Message);
-                return ChainResult<int>.Failure(loadResult.Error);
+                _logger.LogWarning("IndexAsync called with null or whitespace source.");
+                var err = WeaveLLMError.InvalidInput("source must not be null or whitespace.");
+                MarkError(indexActivity, err.Code, err.Message);
+                return ChainResult<int>.Failure(err);
             }
-        }
 
-        var totalChunks = 0;
-
-        foreach (var document in loadResult.Value)
-        {
-            _logger.LogDebug("Chunking document {Id}", document.Id);
-            IReadOnlyList<TextChunk> chunks;
-            using (var chunkActivity = _activitySource.StartActivity("knowledge.chunk"))
+            _logger.LogInformation("Loading documents from {Source}", source);
+            ChainResult<IReadOnlyList<Document>> loadResult;
+            using (var loadActivity = _activitySource.StartActivity("knowledge.load"))
             {
-                chunkActivity?.SetTag("document.id", document.Id);
-                var chunkResult = await _chunker.ChunkAsync(document, ct);
-                if (!chunkResult.IsSuccess)
+                loadResult = await _loader.LoadAsync(source, ct);
+                if (!loadResult.IsSuccess)
                 {
-                    _logger.LogError("Chunk failed for {Id} [{Code}]: {Message}", document.Id, chunkResult.Error.Code, chunkResult.Error.Message);
-                    MarkError(chunkActivity, chunkResult.Error.Code, chunkResult.Error.Message);
-                    MarkError(indexActivity, chunkResult.Error.Code, chunkResult.Error.Message);
-                    return ChainResult<int>.Failure(chunkResult.Error);
+                    _logger.LogError("Load failed [{Code}]: {Message}", loadResult.Error.Code, loadResult.Error.Message);
+                    MarkError(loadActivity, loadResult.Error.Code, loadResult.Error.Message);
+                    MarkError(indexActivity, loadResult.Error.Code, loadResult.Error.Message);
+                    return ChainResult<int>.Failure(loadResult.Error);
+                }
+            }
+
+            var totalChunks = 0;
+
+            foreach (var document in loadResult.Value)
+            {
+                _logger.LogDebug("Chunking document {Id}", document.Id);
+                IReadOnlyList<TextChunk> chunks;
+                using (var chunkActivity = _activitySource.StartActivity("knowledge.chunk"))
+                {
+                    chunkActivity?.SetTag("document.id", document.Id);
+                    var chunkResult = await _chunker.ChunkAsync(document, ct);
+                    if (!chunkResult.IsSuccess)
+                    {
+                        _logger.LogError("Chunk failed for {Id} [{Code}]: {Message}", document.Id, chunkResult.Error.Code, chunkResult.Error.Message);
+                        MarkError(chunkActivity, chunkResult.Error.Code, chunkResult.Error.Message);
+                        MarkError(indexActivity, chunkResult.Error.Code, chunkResult.Error.Message);
+                        return ChainResult<int>.Failure(chunkResult.Error);
+                    }
+
+                    chunks = chunkResult.Value;
                 }
 
-                chunks = chunkResult.Value;
-            }
+                var texts = chunks.Select(c => c.Content).ToList();
 
-            var texts = chunks.Select(c => c.Content).ToList();
-
-            _logger.LogDebug("Embedding {Count} chunks for {Id}", chunks.Count, document.Id);
-            IReadOnlyList<float[]> embeddings;
-            using (var embedActivity = _activitySource.StartActivity("knowledge.embed"))
-            {
-                embedActivity?.SetTag("document.id", document.Id);
-                embedActivity?.SetTag("chunks.count", chunks.Count);
-                var embedResult = await _embeddingModel.EmbedBatchAsync(texts, ct);
-                if (!embedResult.IsSuccess)
+                _logger.LogDebug("Embedding {Count} chunks for {Id}", chunks.Count, document.Id);
+                IReadOnlyList<float[]> embeddings;
+                using (var embedActivity = _activitySource.StartActivity("knowledge.embed"))
                 {
-                    _logger.LogError("Embed failed for {Id} [{Code}]: {Message}", document.Id, embedResult.Error.Code, embedResult.Error.Message);
-                    MarkError(embedActivity, embedResult.Error.Code, embedResult.Error.Message);
-                    MarkError(indexActivity, embedResult.Error.Code, embedResult.Error.Message);
-                    return ChainResult<int>.Failure(embedResult.Error);
+                    embedActivity?.SetTag("document.id", document.Id);
+                    embedActivity?.SetTag("chunks.count", chunks.Count);
+                    var embedResult = await _embeddingModel.EmbedBatchAsync(texts, ct);
+                    if (!embedResult.IsSuccess)
+                    {
+                        _logger.LogError("Embed failed for {Id} [{Code}]: {Message}", document.Id, embedResult.Error.Code, embedResult.Error.Message);
+                        MarkError(embedActivity, embedResult.Error.Code, embedResult.Error.Message);
+                        MarkError(indexActivity, embedResult.Error.Code, embedResult.Error.Message);
+                        return ChainResult<int>.Failure(embedResult.Error);
+                    }
+
+                    embeddings = embedResult.Value;
                 }
 
-                embeddings = embedResult.Value;
-            }
-
-            using (var upsertActivity = _activitySource.StartActivity("knowledge.upsert"))
-            {
-                upsertActivity?.SetTag("document.id", document.Id);
-                upsertActivity?.SetTag("chunks.count", chunks.Count);
-                var upsertResult = await _vectorStore.UpsertAsync(chunks, embeddings, ct);
-                if (!upsertResult.IsSuccess)
+                using (var upsertActivity = _activitySource.StartActivity("knowledge.upsert"))
                 {
-                    _logger.LogError("Upsert failed for {Id} [{Code}]: {Message}", document.Id, upsertResult.Error.Code, upsertResult.Error.Message);
-                    MarkError(upsertActivity, upsertResult.Error.Code, upsertResult.Error.Message);
-                    MarkError(indexActivity, upsertResult.Error.Code, upsertResult.Error.Message);
-                    return ChainResult<int>.Failure(upsertResult.Error);
-                }
+                    upsertActivity?.SetTag("document.id", document.Id);
+                    upsertActivity?.SetTag("chunks.count", chunks.Count);
+                    var upsertResult = await _vectorStore.UpsertAsync(chunks, embeddings, ct);
+                    if (!upsertResult.IsSuccess)
+                    {
+                        _logger.LogError("Upsert failed for {Id} [{Code}]: {Message}", document.Id, upsertResult.Error.Code, upsertResult.Error.Message);
+                        MarkError(upsertActivity, upsertResult.Error.Code, upsertResult.Error.Message);
+                        MarkError(indexActivity, upsertResult.Error.Code, upsertResult.Error.Message);
+                        return ChainResult<int>.Failure(upsertResult.Error);
+                    }
 
-                totalChunks += upsertResult.Value;
+                    totalChunks += upsertResult.Value;
+                }
             }
+
+            indexActivity?.SetTag("chunks.count", totalChunks);
+            indexSucceeded = true;
+            _logger.LogInformation("Indexed {Total} chunks from {Source}", totalChunks, source);
+            return ChainResult<int>.Success(totalChunks);
         }
-
-        indexActivity?.SetTag("chunks.count", totalChunks);
-        _logger.LogInformation("Indexed {Total} chunks from {Source}", totalChunks, source);
-        return ChainResult<int>.Success(totalChunks);
+        finally
+        {
+            _metrics.RecordIndexingLatency(indexStart, indexSucceeded);
+        }
     }
 
     /// <summary>
@@ -166,33 +179,43 @@ public sealed class RagPipeline : IRagPipeline
             return ChainResult<RagAnswer>.Failure(err);
         }
 
-        IReadOnlyList<RetrievalResult> sources;
+        IReadOnlyList<RetrievalResult> sources = Array.Empty<RetrievalResult>();
+        var retrievalStart = Stopwatch.GetTimestamp();
+        var retrievalSucceeded = false;
         using (var searchActivity = _activitySource.StartActivity("knowledge.search"))
         {
-            searchActivity?.SetTag("topk", topK);
-
-            _logger.LogInformation("Embedding question for retrieval");
-            var embedResult = await _embeddingModel.EmbedAsync(question, ct);
-            if (!embedResult.IsSuccess)
+            try
             {
-                _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
-                MarkError(searchActivity, embedResult.Error.Code, embedResult.Error.Message);
-                MarkError(askActivity, embedResult.Error.Code, embedResult.Error.Message);
-                return ChainResult<RagAnswer>.Failure(embedResult.Error);
-            }
+                searchActivity?.SetTag("topk", topK);
 
-            _logger.LogDebug("Searching vector store topK={TopK}", topK);
-            var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
-            if (!searchResult.IsSuccess)
+                _logger.LogInformation("Embedding question for retrieval");
+                var embedResult = await _embeddingModel.EmbedAsync(question, ct);
+                if (!embedResult.IsSuccess)
+                {
+                    _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(searchActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(askActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    return ChainResult<RagAnswer>.Failure(embedResult.Error);
+                }
+
+                _logger.LogDebug("Searching vector store topK={TopK}", topK);
+                var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
+                if (!searchResult.IsSuccess)
+                {
+                    _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
+                    MarkError(searchActivity, searchResult.Error.Code, searchResult.Error.Message);
+                    MarkError(askActivity, searchResult.Error.Code, searchResult.Error.Message);
+                    return ChainResult<RagAnswer>.Failure(searchResult.Error);
+                }
+
+                sources = searchResult.Value;
+                retrievalSucceeded = true;
+                searchActivity?.SetTag("sources.count", sources.Count);
+            }
+            finally
             {
-                _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
-                MarkError(searchActivity, searchResult.Error.Code, searchResult.Error.Message);
-                MarkError(askActivity, searchResult.Error.Code, searchResult.Error.Message);
-                return ChainResult<RagAnswer>.Failure(searchResult.Error);
+                _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
             }
-
-            sources = searchResult.Value;
-            searchActivity?.SetTag("sources.count", sources.Count);
         }
 
         if (sources.Count == 0)
@@ -209,14 +232,17 @@ public sealed class RagPipeline : IRagPipeline
         using (var completeActivity = _activitySource.StartActivity("knowledge.complete"))
         {
             completeActivity?.SetTag("sources.count", sources.Count);
+            var llmStart = Stopwatch.GetTimestamp();
             var chatResult = await _chatModel.ChatAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct);
             if (!chatResult.IsSuccess)
             {
                 MarkError(completeActivity, chatResult.Error.Code, chatResult.Error.Message);
                 MarkError(askActivity, chatResult.Error.Code, chatResult.Error.Message);
+                _metrics.RecordLlmResponseLatency(llmStart, success: false, mode: "complete");
                 return ChainResult<RagAnswer>.Failure(chatResult.Error);
             }
 
+            _metrics.RecordLlmResponseLatency(llmStart, success: true, mode: "complete");
             _logger.LogInformation("AskAsync returning {Count} source(s)", sources.Count);
             return ChainResult<RagAnswer>.Success(new RagAnswer(chatResult.Value.Content, sources));
         }
@@ -246,11 +272,15 @@ public sealed class RagPipeline : IRagPipeline
             yield break;
         }
 
+        var retrievalStart = Stopwatch.GetTimestamp();
+        var retrievalSucceeded = false;
+
         _logger.LogInformation("Embedding question for streaming retrieval");
         var embedResult = await _embeddingModel.EmbedAsync(question, ct);
         if (!embedResult.IsSuccess)
         {
             _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+            _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
             yield return $"[ERROR:{embedResult.Error.Code}] {embedResult.Error.Message}";
             yield break;
         }
@@ -260,11 +290,14 @@ public sealed class RagPipeline : IRagPipeline
         if (!searchResult.IsSuccess)
         {
             _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
+            _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
             yield return $"[ERROR:{searchResult.Error.Code}] {searchResult.Error.Message}";
             yield break;
         }
 
         var sources = searchResult.Value;
+        retrievalSucceeded = true;
+        _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
         if (sources.Count == 0)
         {
             _logger.LogWarning("No relevant sources found for streaming question.");
@@ -276,17 +309,29 @@ public sealed class RagPipeline : IRagPipeline
         var messages = new List<LLMMessage> { LLMMessage.User(prompt) };
 
         _logger.LogInformation("Streaming answer for question");
-        await foreach (var result in _chatModel.StreamChatSafeAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
+        var llmStart = Stopwatch.GetTimestamp();
+        var llmSucceeded = false;
+        try
         {
-            if (!result.IsSuccess)
+            await foreach (var result in _chatModel.StreamChatSafeAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
             {
-                if (result.Error.Code == "CANCELLED")
+                if (!result.IsSuccess)
+                {
+                    if (result.Error.Code == "CANCELLED")
+                        yield break;
+                    _logger.LogError("Streaming chat failed [{Code}]: {Message}", result.Error.Code, result.Error.Message);
+                    yield return $"[ERROR:{result.Error.Code}] {result.Error.Message}";
                     yield break;
-                _logger.LogError("Streaming chat failed [{Code}]: {Message}", result.Error.Code, result.Error.Message);
-                yield return $"[ERROR:{result.Error.Code}] {result.Error.Message}";
-                yield break;
+                }
+
+                yield return result.Value;
             }
-            yield return result.Value;
+
+            llmSucceeded = true;
+        }
+        finally
+        {
+            _metrics.RecordLlmResponseLatency(llmStart, llmSucceeded, "stream");
         }
     }
 

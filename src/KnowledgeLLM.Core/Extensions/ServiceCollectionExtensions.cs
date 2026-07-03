@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Net.Http.Headers;
 using KnowledgeLLM.Core.Chunking;
 using KnowledgeLLM.Core.Configuration;
@@ -38,6 +39,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(KnowledgeLLMOptions.SectionName));
 
         services.AddSingleton(new ActivitySource(PipelineActivitySourceName));
+        services.AddSingleton(new Meter(KnowledgeLlmMetrics.MeterName));
+        services.AddSingleton<KnowledgeLlmMetrics>();
 
         services.AddHttpClient("openai-embeddings", (sp, client) =>
         {

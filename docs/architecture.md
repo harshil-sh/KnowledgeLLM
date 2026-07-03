@@ -135,4 +135,5 @@ This allows the same pipeline to run in lightweight local mode or in persistent 
 
 - The API applies request validation, optional API-key middleware, fixed-window rate limiting, health checks, and Serilog request logging.
 - `RagPipeline` creates OpenTelemetry activities for index, load, chunk, embed, upsert, ask, search, and completion stages.
+- The pipeline records latency histograms for indexing (`knowledgellm.indexing.duration`), retrieval (`knowledgellm.retrieval.duration`), and LLM response generation (`knowledgellm.llm_response.duration`) so operators can compare ingestion, vector-search, and model-call performance.
 - Pipeline stages fail fast with structured `ChainResult<T>` errors; later stages are not invoked after an upstream failure.
