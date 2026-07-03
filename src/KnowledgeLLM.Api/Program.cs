@@ -7,10 +7,12 @@ using KnowledgeLLM.Api.Middleware;
 using KnowledgeLLM.Api.Validation;
 using KnowledgeLLM.Core.Configuration;
 using KnowledgeLLM.Core.Extensions;
+using KnowledgeLLM.Core.Pipeline;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Serilog;
 
@@ -58,6 +60,15 @@ if (pgOpts.Enabled && !string.IsNullOrWhiteSpace(pgOpts.ConnectionString))
 }
 
 builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics.AddMeter(KnowledgeLlmMetrics.MeterName);
+
+        if (builder.Environment.IsDevelopment())
+            metrics.AddConsoleExporter();
+        else
+            metrics.AddOtlpExporter();
+    })
     .WithTracing(tracing =>
     {
         tracing.AddSource(KnowledgeLLM.Core.Extensions.ServiceCollectionExtensions.PipelineActivitySourceName);

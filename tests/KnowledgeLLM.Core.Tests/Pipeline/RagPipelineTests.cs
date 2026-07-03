@@ -6,6 +6,7 @@ using KnowledgeLLM.Core.Retrieval;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using WeaveLLM.Core.Models;
 using IChatModel = WeaveLLM.Core.Providers.IChatModel;
 using IEmbeddingModel = KnowledgeLLM.Core.Embeddings.IEmbeddingModel;
@@ -28,7 +29,7 @@ public sealed class RagPipelineTests
     public RagPipelineTests()
     {
         _sut = new RagPipeline(_loader, _chunker, _embedder, _store, _chatClient,
-            NullLogger<RagPipeline>.Instance, new ActivitySource("test"));
+            NullLogger<RagPipeline>.Instance, new ActivitySource("test"), new KnowledgeLlmMetrics(new Meter("test")));
     }
 
     // helpers
