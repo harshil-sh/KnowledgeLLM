@@ -83,7 +83,7 @@
   - Retrieval latency
   - LLM response latency
 
-- [ ] Add OpenTelemetry tracing
+- [x] Add OpenTelemetry tracing
   - Document loading
   - Chunking
   - Embeddings

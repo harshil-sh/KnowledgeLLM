@@ -182,24 +182,32 @@ public sealed class RagPipeline : IRagPipeline
         IReadOnlyList<RetrievalResult> sources = Array.Empty<RetrievalResult>();
         var retrievalStart = Stopwatch.GetTimestamp();
         var retrievalSucceeded = false;
-        using (var searchActivity = _activitySource.StartActivity("knowledge.search"))
+        try
         {
-            try
+            float[] queryEmbedding;
+            using (var embedActivity = _activitySource.StartActivity("knowledge.embed_question"))
             {
-                searchActivity?.SetTag("topk", topK);
+                embedActivity?.SetTag("topk", topK);
 
                 _logger.LogInformation("Embedding question for retrieval");
                 var embedResult = await _embeddingModel.EmbedAsync(question, ct);
                 if (!embedResult.IsSuccess)
                 {
                     _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
-                    MarkError(searchActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(embedActivity, embedResult.Error.Code, embedResult.Error.Message);
                     MarkError(askActivity, embedResult.Error.Code, embedResult.Error.Message);
                     return ChainResult<RagAnswer>.Failure(embedResult.Error);
                 }
 
+                queryEmbedding = embedResult.Value;
+            }
+
+            using (var searchActivity = _activitySource.StartActivity("knowledge.search"))
+            {
+                searchActivity?.SetTag("topk", topK);
+
                 _logger.LogDebug("Searching vector store topK={TopK}", topK);
-                var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
+                var searchResult = await _vectorStore.SearchAsync(queryEmbedding, topK, ct);
                 if (!searchResult.IsSuccess)
                 {
                     _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
@@ -212,10 +220,10 @@ public sealed class RagPipeline : IRagPipeline
                 retrievalSucceeded = true;
                 searchActivity?.SetTag("sources.count", sources.Count);
             }
-            finally
-            {
-                _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
-            }
+        }
+        finally
+        {
+            _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
         }
 
         if (sources.Count == 0)
@@ -272,35 +280,63 @@ public sealed class RagPipeline : IRagPipeline
             yield break;
         }
 
+        using var askActivity = _activitySource.StartActivity("knowledge.ask_stream");
+        askActivity?.SetTag("topk", topK);
+
         var retrievalStart = Stopwatch.GetTimestamp();
         var retrievalSucceeded = false;
-
-        _logger.LogInformation("Embedding question for streaming retrieval");
-        var embedResult = await _embeddingModel.EmbedAsync(question, ct);
-        if (!embedResult.IsSuccess)
+        ChainResult<IReadOnlyList<RetrievalResult>>? searchResult = null;
+        try
         {
-            _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+            float[] queryEmbedding;
+            using (var embedActivity = _activitySource.StartActivity("knowledge.embed_question"))
+            {
+                embedActivity?.SetTag("topk", topK);
+
+                _logger.LogInformation("Embedding question for streaming retrieval");
+                var embedResult = await _embeddingModel.EmbedAsync(question, ct);
+                if (!embedResult.IsSuccess)
+                {
+                    _logger.LogError("Question embed failed [{Code}]: {Message}", embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(embedActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    MarkError(askActivity, embedResult.Error.Code, embedResult.Error.Message);
+                    yield return $"[ERROR:{embedResult.Error.Code}] {embedResult.Error.Message}";
+                    yield break;
+                }
+
+                queryEmbedding = embedResult.Value;
+            }
+
+            using (var searchActivity = _activitySource.StartActivity("knowledge.search"))
+            {
+                searchActivity?.SetTag("topk", topK);
+
+                _logger.LogDebug("Searching vector store topK={TopK}", topK);
+                searchResult = await _vectorStore.SearchAsync(queryEmbedding, topK, ct);
+                if (!searchResult.IsSuccess)
+                {
+                    _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
+                    MarkError(searchActivity, searchResult.Error.Code, searchResult.Error.Message);
+                    MarkError(askActivity, searchResult.Error.Code, searchResult.Error.Message);
+                    yield return $"[ERROR:{searchResult.Error.Code}] {searchResult.Error.Message}";
+                    yield break;
+                }
+
+                retrievalSucceeded = true;
+                searchActivity?.SetTag("sources.count", searchResult.Value.Count);
+            }
+        }
+        finally
+        {
             _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
-            yield return $"[ERROR:{embedResult.Error.Code}] {embedResult.Error.Message}";
-            yield break;
         }
 
-        _logger.LogDebug("Searching vector store topK={TopK}", topK);
-        var searchResult = await _vectorStore.SearchAsync(embedResult.Value, topK, ct);
-        if (!searchResult.IsSuccess)
-        {
-            _logger.LogError("Search failed [{Code}]: {Message}", searchResult.Error.Code, searchResult.Error.Message);
-            _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
-            yield return $"[ERROR:{searchResult.Error.Code}] {searchResult.Error.Message}";
-            yield break;
-        }
-
-        var sources = searchResult.Value;
-        retrievalSucceeded = true;
-        _metrics.RecordRetrievalLatency(retrievalStart, retrievalSucceeded);
+        var sources = searchResult!.Value;
         if (sources.Count == 0)
         {
             _logger.LogWarning("No relevant sources found for streaming question.");
+            var err = WeaveLLMError.NotFound("No relevant context found for the question.");
+            MarkError(askActivity, err.Code, err.Message);
             yield return "[ERROR:NOT_FOUND] No relevant context found for the question.";
             yield break;
         }
@@ -311,6 +347,8 @@ public sealed class RagPipeline : IRagPipeline
         _logger.LogInformation("Streaming answer for question");
         var llmStart = Stopwatch.GetTimestamp();
         var llmSucceeded = false;
+        using var completeActivity = _activitySource.StartActivity("knowledge.complete_stream");
+        completeActivity?.SetTag("sources.count", sources.Count);
         try
         {
             await foreach (var result in _chatModel.StreamChatSafeAsync(messages, new LLMOptions { MaxTokens = 1024 }, ct).WithCancellation(ct))
@@ -320,6 +358,8 @@ public sealed class RagPipeline : IRagPipeline
                     if (result.Error.Code == "CANCELLED")
                         yield break;
                     _logger.LogError("Streaming chat failed [{Code}]: {Message}", result.Error.Code, result.Error.Message);
+                    MarkError(completeActivity, result.Error.Code, result.Error.Message);
+                    MarkError(askActivity, result.Error.Code, result.Error.Message);
                     yield return $"[ERROR:{result.Error.Code}] {result.Error.Message}";
                     yield break;
                 }
