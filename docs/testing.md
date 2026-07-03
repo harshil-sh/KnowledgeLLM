@@ -13,7 +13,7 @@ Current unit coverage includes:
 - pipeline orchestration, including failure short-circuiting and source propagation;
 - streaming pipeline behavior;
 - OpenAI embedding and health-check HTTP handling through fake message handlers;
-- document loader validation for plain-text and PDF inputs;
+- document loader validation for plain-text, PDF, and Word inputs;
 - in-memory vector search behavior.
 
 External dependencies are replaced with test doubles such as fake HTTP handlers, substitute chat and embedding models, and the in-memory vector store. This keeps the default `dotnet test` path fast, repeatable, and safe to run without secrets.

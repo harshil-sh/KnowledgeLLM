@@ -81,8 +81,9 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Replaces the registered <c>IDocumentLoader</c> with a <see cref="CompositeDocumentLoader"/>
-    /// that handles both <c>.txt</c> files (via <see cref="PlainTextDocumentLoader"/>) and
-    /// <c>.pdf</c> files (via <see cref="PdfDocumentLoader"/>).
+    /// that handles <c>.txt</c> files (via <see cref="PlainTextDocumentLoader"/>),
+    /// <c>.pdf</c> files (via <see cref="PdfDocumentLoader"/>), and
+    /// <c>.docx</c> files (via <see cref="WordDocumentLoader"/>).
     /// Must be called after <see cref="AddKnowledgeLLM"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -91,10 +92,12 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton<PlainTextDocumentLoader>();
         services.TryAddSingleton<PdfDocumentLoader>();
+        services.TryAddSingleton<WordDocumentLoader>();
         services.AddSingleton<IDocumentLoader>(sp =>
             new CompositeDocumentLoader(
                 sp.GetRequiredService<PlainTextDocumentLoader>(),
-                sp.GetRequiredService<PdfDocumentLoader>()));
+                sp.GetRequiredService<PdfDocumentLoader>(),
+                sp.GetRequiredService<WordDocumentLoader>()));
 
         return services;
     }

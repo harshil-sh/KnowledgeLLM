@@ -5,13 +5,13 @@
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/download/dotnet/8)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**KnowledgeLLM** is a lightweight RAG (Retrieval-Augmented Generation) API built on .NET 8 and [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Point it at a folder of `.txt` or `.pdf` files, call `/index` to embed and store document chunks, then call `/ask` (or `/ask/stream` for Server-Sent Events) to get answers grounded in that content — powered by OpenAI embeddings and chat completion, with an optional PostgreSQL/pgvector backend for persistent storage.
+**KnowledgeLLM** is a lightweight RAG (Retrieval-Augmented Generation) API built on .NET 8 and [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Point it at a folder of `.txt`, `.pdf`, or `.docx` files, call `/index` to embed and store document chunks, then call `/ask` (or `/ask/stream` for Server-Sent Events) to get answers grounded in that content — powered by OpenAI embeddings and chat completion, with an optional PostgreSQL/pgvector backend for persistent storage.
 
 ---
 
 ## Why this project exists
 
-KnowledgeLLM exists to demonstrate a practical, document-grounded question answering application built on top of [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Rather than treating retrieval-augmented generation as an abstract pattern, the API gives teams a focused workflow: index local `.txt` and `.pdf` knowledge sources, retrieve the most relevant chunks for a user question, and generate an answer that is explicitly grounded in those retrieved sources.
+KnowledgeLLM exists to demonstrate a practical, document-grounded question answering application built on top of [WeaveLLM.Core](https://www.nuget.org/packages/WeaveLLM.Core/0.1.0-alpha). Rather than treating retrieval-augmented generation as an abstract pattern, the API gives teams a focused workflow: index local `.txt`, `.pdf`, and `.docx` knowledge sources, retrieve the most relevant chunks for a user question, and generate an answer that is explicitly grounded in those retrieved sources.
 
 This makes the project useful for scenarios such as internal policy lookup, onboarding guides, support knowledge bases, and technical documentation assistants where answers should stay tied to source material instead of relying on model memory alone.
 
@@ -65,7 +65,7 @@ curl -s -X POST http://localhost:5000/api/knowledge/index \
 # { "chunksIndexed": 42, "source": "/path/to/docs" }
 ```
 
-`source` can be a directory (`.txt` / `.pdf` files loaded recursively) or a single file path.
+`source` can be a directory (`.txt` / `.pdf` / `.docx` files loaded recursively) or a single file path.
 
 ### Ask a question
 
@@ -105,7 +105,7 @@ Keys live under the `KnowledgeLLM` section in `appsettings.json`, or as environm
 | `KnowledgeLLM:PgVector:Enabled` | `false` | `true` → PostgreSQL/pgvector store; `false` → in-memory |
 | `KnowledgeLLM:PgVector:ConnectionString` | *(empty)* | Npgsql connection string (required when enabled) |
 
-> **PDF support** is opt-in: call `services.AddPdfDocumentLoader()` after `AddKnowledgeLLM(...)` in `Program.cs`.
+> **PDF and Word support** are opt-in: call `services.AddPdfDocumentLoader()` after `AddKnowledgeLLM(...)` in `Program.cs` to enable `.pdf` and `.docx` loading alongside `.txt`.
 
 ---
 
@@ -117,7 +117,7 @@ INDEX FLOW
   source path
     │
     ▼
-  IDocumentLoader.LoadAsync()        reads .txt / .pdf files from disk
+  IDocumentLoader.LoadAsync()        reads .txt / .pdf / .docx files from disk
     │
     ▼
   ITextChunker.ChunkAsync()          sliding-window split → TextChunk[]
@@ -169,7 +169,7 @@ KnowledgeLLM/
 │       ├── Chunking/                    # SlidingWindowChunker
 │       ├── Configuration/               # KnowledgeLLMOptions, PgVectorOptions
 │       ├── Documents/                   # PlainTextDocumentLoader, PdfDocumentLoader,
-│       │                                #   CompositeDocumentLoader
+│       │                                #   WordDocumentLoader, CompositeDocumentLoader
 │       ├── Embeddings/                  # OpenAIEmbeddingModel
 │       ├── Extensions/                  # AddKnowledgeLLM(), AddPdfDocumentLoader()
 │       ├── Pipeline/                    # RagPipeline, PromptBuilder
@@ -188,7 +188,7 @@ KnowledgeLLM/
 | 2 | ✅ Complete | OpenAI embedding model, config binding, HTTP client factory wiring |
 | 3 | ✅ Complete | `IChatModel` via `WeaveLLM.Providers` (`OpenAIChatModel`), streaming SSE endpoint |
 | 4 | ✅ Complete | PostgreSQL/pgvector store, PDF document loader, composite loader DI extension |
-| 5 | ⏳ Pending | Word document loader, OpenTelemetry observability, rate-limit retry policy |
+| 5 | ⏳ Pending | Sample document pack, API authentication example, deployment guide |
 
 ---
 
