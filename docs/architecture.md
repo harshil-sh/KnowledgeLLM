@@ -8,7 +8,7 @@ KnowledgeLLM is a .NET 8 Retrieval-Augmented Generation (RAG) API. The API layer
 |---|---|
 | `KnowledgeController` | HTTP boundary for `/api/knowledge/index`, `/api/knowledge/ask`, and `/api/knowledge/ask/stream`. It maps pipeline results to API responses and error payloads. |
 | `RagPipeline` | Orchestrates indexing and query execution. Each stage returns a `ChainResult<T>` and the pipeline short-circuits on the first failure. |
-| `IDocumentLoader` | Loads supported source documents from a file or directory. `PlainTextDocumentLoader` handles `.txt`; `CompositeDocumentLoader` can combine text and PDF loading. |
+| `IDocumentLoader` | Loads supported source documents from a file or directory. `PlainTextDocumentLoader` handles `.txt`; `CompositeDocumentLoader` can combine text, PDF, and Word loading. |
 | `ITextChunker` | Splits each loaded document into overlapping `TextChunk` instances using `SlidingWindowChunker`. |
 | `IEmbeddingModel` | Calls OpenAI embeddings for document chunks and user questions. |
 | `IVectorStore` | Stores and searches vectors. The application can use `InMemoryVectorStore` for local development or `PgVectorStore` for PostgreSQL/pgvector persistence. |
@@ -22,7 +22,7 @@ flowchart LR
     Client[Client]
     API[KnowledgeLLM.Api\nKnowledgeController]
     Pipeline[KnowledgeLLM.Core\nRagPipeline]
-    Loader[IDocumentLoader\n.txt / .pdf]
+    Loader[IDocumentLoader\n.txt / .pdf / .docx]
     Chunker[ITextChunker\nSlidingWindowChunker]
     Embeddings[IEmbeddingModel\nOpenAI embeddings]
     Store[IVectorStore\nInMemory or PostgreSQL/pgvector]
@@ -50,7 +50,7 @@ The indexing flow ingests a local source path and persists searchable chunk embe
 1. **Validate input**: `RagPipeline.IndexAsync` rejects a null, empty, or whitespace `source` value.
 2. **Load documents**: The configured `IDocumentLoader` reads the source path.
    - A single `.txt` file is loaded by `PlainTextDocumentLoader`.
-   - When PDF support is registered, `CompositeDocumentLoader` dispatches `.txt` and `.pdf` files to the appropriate loader.
+   - When PDF and Word support are registered, `CompositeDocumentLoader` dispatches `.txt`, `.pdf`, and `.docx` files to the appropriate loader.
    - Directories are loaded recursively for supported file types.
 3. **Chunk documents**: Each `Document` is split by `SlidingWindowChunker` according to configured chunk size and overlap.
 4. **Embed chunks**: `OpenAIEmbeddingModel.EmbedBatchAsync` converts chunk text into embedding vectors.

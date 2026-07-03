@@ -1,3 +1,6 @@
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using Wp = DocumentFormat.OpenXml.Wordprocessing;
 using FluentAssertions;
 using KnowledgeLLM.Core.Documents;
 using UglyToad.PdfPig.Writer;
@@ -10,7 +13,7 @@ namespace KnowledgeLLM.Core.Tests.Documents;
 public sealed class CompositeDocumentLoaderTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-    private readonly CompositeDocumentLoader _sut = new(new PlainTextDocumentLoader(), new PdfDocumentLoader());
+    private readonly CompositeDocumentLoader _sut = new(new PlainTextDocumentLoader(), new PdfDocumentLoader(), new WordDocumentLoader());
 
     public CompositeDocumentLoaderTests() => Directory.CreateDirectory(_tempDir);
 
@@ -33,6 +36,15 @@ public sealed class CompositeDocumentLoaderTests : IDisposable
         page.AddText(text, 12, new PdfPoint(50, 700), font);
         var path = Path.Combine(_tempDir, fileName);
         File.WriteAllBytes(path, builder.Build());
+        return path;
+    }
+
+    private string WriteDocx(string fileName, string text)
+    {
+        var path = Path.Combine(_tempDir, fileName);
+        using var document = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
+        var mainPart = document.AddMainDocumentPart();
+        mainPart.Document = new Wp.Document(new Wp.Body(new Wp.Paragraph(new Wp.Run(new Wp.Text(text)))));
         return path;
     }
 
@@ -71,7 +83,7 @@ public sealed class CompositeDocumentLoaderTests : IDisposable
     [Fact]
     public async Task LoadAsync_UnsupportedFileExtension_ReturnsInvalidInput()
     {
-        var path = Path.Combine(_tempDir, "doc.docx");
+        var path = Path.Combine(_tempDir, "doc.xlsx");
         File.WriteAllBytes(path, []);
 
         var result = await _sut.LoadAsync(path, CancellationToken.None);
@@ -106,20 +118,34 @@ public sealed class CompositeDocumentLoaderTests : IDisposable
         result.Value[0].Content.Should().Contain("pdf content");
     }
 
+    [Fact]
+    public async Task LoadAsync_DocxFile_ReturnsSingleDocumentWithExtractedText()
+    {
+        var path = WriteDocx("doc.docx", "word content");
+
+        var result = await _sut.LoadAsync(path, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(1);
+        result.Value[0].Content.Should().Contain("word content");
+    }
+
     // ── Directory merge ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task LoadAsync_Directory_ReturnsBothTxtAndPdfDocuments()
+    public async Task LoadAsync_Directory_ReturnsTxtPdfAndDocxDocuments()
     {
         WriteTxt("a.txt", "text doc");
         WritePdf("b.pdf", "pdf doc");
+        WriteDocx("c.docx", "word doc");
 
         var result = await _sut.LoadAsync(_tempDir, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().HaveCount(2);
+        result.Value.Should().HaveCount(3);
         result.Value.Should().Contain(d => d.Content == "text doc");
         result.Value.Should().Contain(d => d.Content.Contains("pdf doc"));
+        result.Value.Should().Contain(d => d.Content.Contains("word doc"));
     }
 
     [Fact]

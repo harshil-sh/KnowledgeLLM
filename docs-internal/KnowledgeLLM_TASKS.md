@@ -99,7 +99,7 @@
 
 ## Phase 4 - Nice To Have
 
-- [ ] Add Word document loader (.docx)
+- [x] Add Word document loader (.docx)
 
 - [ ] Add sample document pack
 
