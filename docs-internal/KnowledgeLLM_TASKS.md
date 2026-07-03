@@ -73,7 +73,7 @@
   - eval/questions.json
   - 20+ benchmark questions
 
-- [ ] Create RAG evaluation runner
+- [x] Create RAG evaluation runner
   - Retrieval hit rate
   - Source relevance
   - Grounding validation
