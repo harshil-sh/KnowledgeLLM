@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KnowledgeLLM.Api", "src\Kno
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KnowledgeLLM.Core.Tests", "tests\KnowledgeLLM.Core.Tests\KnowledgeLLM.Core.Tests.csproj", "{A032781D-6DDB-4162-8F43-C16A8648C069}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KnowledgeLLM.Eval", "tools\KnowledgeLLM.Eval\KnowledgeLLM.Eval.csproj", "{5B8FF03A-B388-44F0-A444-D167AB31D43B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{A032781D-6DDB-4162-8F43-C16A8648C069}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A032781D-6DDB-4162-8F43-C16A8648C069}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A032781D-6DDB-4162-8F43-C16A8648C069}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5B8FF03A-B388-44F0-A444-D167AB31D43B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B8FF03A-B388-44F0-A444-D167AB31D43B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5B8FF03A-B388-44F0-A444-D167AB31D43B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5B8FF03A-B388-44F0-A444-D167AB31D43B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolution = False
