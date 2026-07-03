@@ -3,13 +3,33 @@ using System.Text;
 
 namespace KnowledgeLLM.Core.Tests.Helpers;
 
-/// <summary>Fake handler that returns a pre-built <see cref="HttpResponseMessage"/> on every call.</summary>
+/// <summary>Fake handler that returns a fresh copy of a pre-built <see cref="HttpResponseMessage"/> on every call.</summary>
 internal sealed class FakeHttpMessageHandler(HttpResponseMessage response) : HttpMessageHandler
 {
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(response);
+        var clone = new HttpResponseMessage(response.StatusCode)
+        {
+            ReasonPhrase = response.ReasonPhrase,
+            Version = response.Version
+        };
+
+        foreach (var header in response.Headers)
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+        if (response.Content is not null)
+        {
+            var content = await response.Content.ReadAsStringAsync(ct);
+            clone.Content = new StringContent(content, Encoding.UTF8, response.Content.Headers.ContentType?.MediaType);
+            foreach (var header in response.Content.Headers.Where(h =>
+                         !string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase)))
+            {
+                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        return clone;
     }
 }
 
@@ -44,6 +64,22 @@ internal sealed class CancelOnSendHandler(CancellationTokenSource cts) : HttpMes
     {
         cts.Cancel();
         throw new TaskCanceledException("Cancelled by test.", null, cts.Token);
+    }
+}
+
+/// <summary>Fake handler that returns a sequence of fresh responses and records how many requests were sent.</summary>
+internal sealed class SequenceHttpMessageHandler(params Func<HttpResponseMessage>[] responses) : HttpMessageHandler
+{
+    private int _calls;
+
+    internal int Calls => _calls;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var call = Interlocked.Increment(ref _calls);
+        var index = Math.Min(call - 1, responses.Length - 1);
+        return Task.FromResult(responses[index]());
     }
 }
 
