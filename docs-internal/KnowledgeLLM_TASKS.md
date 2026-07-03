@@ -90,7 +90,7 @@
   - Vector search
   - Chat completion
 
-- [ ] Add retry policy
+- [x] Add retry policy
   - Exponential backoff
   - Transient OpenAI failures
   - Automated tests

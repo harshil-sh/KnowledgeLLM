@@ -47,6 +47,22 @@ internal sealed class CancelOnSendHandler(CancellationTokenSource cts) : HttpMes
     }
 }
 
+/// <summary>Fake handler that returns a sequence of fresh responses and records how many requests were sent.</summary>
+internal sealed class SequenceHttpMessageHandler(params Func<HttpResponseMessage>[] responses) : HttpMessageHandler
+{
+    private int _calls;
+
+    internal int Calls => _calls;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var call = Interlocked.Increment(ref _calls);
+        var index = Math.Min(call - 1, responses.Length - 1);
+        return Task.FromResult(responses[index]());
+    }
+}
+
 /// <summary>Shared HTTP factory helpers.</summary>
 internal static class HttpClientFactoryHelper
 {

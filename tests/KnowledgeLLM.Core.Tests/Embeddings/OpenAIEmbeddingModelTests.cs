@@ -333,6 +333,51 @@ public sealed class OpenAIEmbeddingModelTests
         result.Error.Code.Should().Be("CANCELLED");
     }
 
+    [Fact]
+    public async Task EmbedAsync_Transient5xxThenSuccess_RetriesAndReturnsEmbeddingVector()
+    {
+        var handler = new SequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.InternalServerError),
+            () => HttpClientFactoryHelper.JsonOk(SingleEmbeddingJson));
+        var sut = BuildSut(ValidOptions(), handler);
+
+        var result = await sut.EmbedAsync("hello", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Equal(1.0f, 2.0f, 3.0f);
+        handler.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task EmbedAsync_TooManyRequestsThenSuccess_RetriesAndReturnsEmbeddingVector()
+    {
+        var handler = new SequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            () => HttpClientFactoryHelper.JsonOk(SingleEmbeddingJson));
+        var sut = BuildSut(ValidOptions(), handler);
+
+        var result = await sut.EmbedAsync("hello", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Equal(1.0f, 2.0f, 3.0f);
+        handler.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsync_Transient5xxThenSuccess_RetriesAndReturnsVectors()
+    {
+        var handler = new SequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            () => HttpClientFactoryHelper.JsonOk(BatchEmbeddingJson));
+        var sut = BuildSut(ValidOptions(), handler);
+
+        var result = await sut.EmbedBatchAsync(new[] { "first", "second" }, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+        handler.Calls.Should().Be(2);
+    }
+
     // ---- Thread safety --------------------------------------------------------
 
     [Fact]

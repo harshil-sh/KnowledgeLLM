@@ -10,6 +10,9 @@ namespace KnowledgeLLM.Core.Embeddings;
 /// <summary>OpenAI-backed embedding model that calls the /v1/embeddings endpoint.</summary>
 public sealed class OpenAIEmbeddingModel : IEmbeddingModel
 {
+    private const int MaxOpenAIRetryAttempts = 3;
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(100);
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly KnowledgeLLMOptions _options;
 
@@ -47,19 +50,14 @@ public sealed class OpenAIEmbeddingModel : IEmbeddingModel
         var client = _httpClientFactory.CreateClient("openai-embeddings");
         var requestBody = new SingleEmbeddingRequest(_options.OpenAI.EmbeddingModel, text);
 
-        try
-        {
-            var response = await client.PostAsJsonAsync("https://api.openai.com/v1/embeddings", requestBody, ct);
-            var httpError = MapHttpError<float[]>(response);
-            if (httpError is not null) return httpError;
-
-            var body = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(cancellationToken: ct);
-            return ChainResult<float[]>.Success(body!.Data[0].Embedding);
-        }
-        catch (TaskCanceledException ex)
-        {
-            return BuildCancelledOrTimeoutError<float[]>(ex, ct);
-        }
+        return await SendWithRetryAsync(
+            () => client.PostAsJsonAsync("https://api.openai.com/v1/embeddings", requestBody, ct),
+            async response =>
+            {
+                var body = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(cancellationToken: ct);
+                return body!.Data[0].Embedding;
+            },
+            ct);
     }
 
     /// <summary>
@@ -87,25 +85,75 @@ public sealed class OpenAIEmbeddingModel : IEmbeddingModel
         var client = _httpClientFactory.CreateClient("openai-embeddings");
         var requestBody = new BatchEmbeddingRequest(_options.OpenAI.EmbeddingModel, texts);
 
+        return await SendWithRetryAsync<IReadOnlyList<float[]>>(
+            () => client.PostAsJsonAsync("https://api.openai.com/v1/embeddings", requestBody, ct),
+            async response =>
+            {
+                var body = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(cancellationToken: ct);
+                return body!.Data
+                    .OrderBy(d => d.Index)
+                    .Select(d => d.Embedding)
+                    .ToArray();
+            },
+            ct);
+    }
+
+    private static async Task<ChainResult<T>> SendWithRetryAsync<T>(
+        Func<Task<HttpResponseMessage>> sendAsync,
+        Func<HttpResponseMessage, Task<T>> readSuccessAsync,
+        CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= MaxOpenAIRetryAttempts; attempt++)
+        {
+            try
+            {
+                using var response = await sendAsync();
+                var httpError = MapHttpError<T>(response);
+                if (httpError is null)
+                    return ChainResult<T>.Success(await readSuccessAsync(response));
+
+                if (!IsRetriableStatus(response.StatusCode) || attempt == MaxOpenAIRetryAttempts)
+                    return httpError;
+            }
+            catch (TaskCanceledException ex)
+            {
+                if (ct.IsCancellationRequested || attempt == MaxOpenAIRetryAttempts)
+                    return BuildCancelledOrTimeoutError<T>(ex, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                if (attempt == MaxOpenAIRetryAttempts)
+                    return ChainResult<T>.Failure(WeaveLLMError.ProviderError(
+                        "OpenAI",
+                        "Request to OpenAI failed after retries.",
+                        ex));
+            }
+
+            var delayResult = await DelayBeforeRetryAsync<T>(attempt, ct);
+            if (delayResult is not null) return delayResult;
+        }
+
+        return ChainResult<T>.Failure(WeaveLLMError.ProviderError("OpenAI", "OpenAI request failed after retries."));
+    }
+
+    private static async Task<ChainResult<T>?> DelayBeforeRetryAsync<T>(int attempt, CancellationToken ct)
+    {
         try
         {
-            var response = await client.PostAsJsonAsync("https://api.openai.com/v1/embeddings", requestBody, ct);
-            var httpError = MapHttpError<IReadOnlyList<float[]>>(response);
-            if (httpError is not null) return httpError;
-
-            var body = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(cancellationToken: ct);
-            var vectors = body!.Data
-                .OrderBy(d => d.Index)
-                .Select(d => d.Embedding)
-                .ToArray();
-
-            return ChainResult<IReadOnlyList<float[]>>.Success(vectors);
+            await Task.Delay(GetRetryDelay(attempt), ct);
+            return null;
         }
         catch (TaskCanceledException ex)
         {
-            return BuildCancelledOrTimeoutError<IReadOnlyList<float[]>>(ex, ct);
+            return BuildCancelledOrTimeoutError<T>(ex, ct);
         }
     }
+
+    private static bool IsRetriableStatus(HttpStatusCode statusCode) =>
+        statusCode == HttpStatusCode.TooManyRequests || (int)statusCode >= 500;
+
+    private static TimeSpan GetRetryDelay(int attempt) =>
+        TimeSpan.FromMilliseconds(InitialRetryDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
 
     private ChainResult<T>? ValidateApiKey<T>()
     {
@@ -130,12 +178,12 @@ public sealed class OpenAIEmbeddingModel : IEmbeddingModel
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
             return ChainResult<T>.Failure(WeaveLLMError.RateLimitExceeded(
-                "OpenAI returned 429. Reduce request frequency or add retry logic."));
+                "OpenAI returned 429 after retry attempts. Reduce request frequency."));
 
         if (statusCode >= 500)
             return ChainResult<T>.Failure(WeaveLLMError.ProviderError(
                 "OpenAI",
-                $"OpenAI returned {statusCode}. This is likely transient — retry the request.",
+                $"OpenAI returned {statusCode}. This is likely transient and was retried.",
                 new HttpRequestException($"HTTP {statusCode}")));
 
         return ChainResult<T>.Failure(WeaveLLMError.ProviderError(
