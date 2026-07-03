@@ -69,7 +69,7 @@
 
 ## Phase 3 - AI Engineering Credibility
 
-- [ ] Create evaluation dataset
+- [x] Create evaluation dataset
   - eval/questions.json
   - 20+ benchmark questions
 

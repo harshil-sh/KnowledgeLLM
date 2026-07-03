@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "description": "Benchmark questions for evaluating KnowledgeLLM retrieval and grounded-answer behavior against the repository documentation.",
+  "questions": [
+    {
+      "id": "rag-purpose-001",
+      "question": "Why does KnowledgeLLM exist?",
+      "expectedSources": ["README.md"],
+      "expectedAnswerContains": ["document-grounded", "WeaveLLM.Core", "question answering"]
+    },
+    {
+      "id": "rag-use-cases-002",
+      "question": "What kinds of use cases is KnowledgeLLM intended to support?",
+      "expectedSources": ["README.md"],
+      "expectedAnswerContains": ["policy", "onboarding", "support", "technical documentation"]
+    },
+    {
+      "id": "production-capabilities-003",
+      "question": "Which production-oriented capabilities does KnowledgeLLM provide?",
+      "expectedSources": ["README.md"],
+      "expectedAnswerContains": ["CI/CD", "automated testing", "PostgreSQL", "SSE", "source-grounded"]
+    },
+    {
+      "id": "quickstart-run-004",
+      "question": "How do I run the KnowledgeLLM API locally after setting an OpenAI API key?",
+      "expectedSources": ["README.md"],
+      "expectedAnswerContains": ["dotnet run", "src/KnowledgeLLM.Api", "Swagger"]
+    },
+    {
+      "id": "index-endpoint-005",
+      "question": "Which endpoint indexes documents and what input does it expect?",
+      "expectedSources": ["README.md", "docs/demo.md"],
+      "expectedAnswerContains": ["POST", "/api/knowledge/index", "source"]
+    },
+    {
+      "id": "ask-endpoint-006",
+      "question": "Which endpoint returns a grounded answer and source chunks?",
+      "expectedSources": ["README.md", "docs/demo.md"],
+      "expectedAnswerContains": ["POST", "/api/knowledge/ask", "answer", "sources"]
+    },
+    {
+      "id": "stream-endpoint-007",
+      "question": "How does KnowledgeLLM stream answer tokens to clients?",
+      "expectedSources": ["README.md", "docs/demo.md", "docs/architecture.md"],
+      "expectedAnswerContains": ["/api/knowledge/ask/stream", "Server-Sent Events", "[DONE]"]
+    },
+    {
+      "id": "supported-files-008",
+      "question": "Which document file types can KnowledgeLLM load?",
+      "expectedSources": ["README.md", "docs/configuration.md", "docs/architecture.md"],
+      "expectedAnswerContains": [".txt", ".pdf"]
+    },
+    {
+      "id": "config-api-key-009",
+      "question": "Which configuration key supplies the OpenAI API key?",
+      "expectedSources": ["README.md", "docs/configuration.md"],
+      "expectedAnswerContains": ["KnowledgeLLM:OpenAI:ApiKey", "KNOWLEDGELLM__OPENAI__APIKEY"]
+    },
+    {
+      "id": "config-chunking-010",
+      "question": "Which settings control chunk size and chunk overlap?",
+      "expectedSources": ["README.md", "docs/configuration.md"],
+      "expectedAnswerContains": ["KnowledgeLLM:Chunker:ChunkSize", "KnowledgeLLM:Chunker:Overlap"]
+    },
+    {
+      "id": "config-pgvector-011",
+      "question": "How do I enable PostgreSQL/pgvector persistence?",
+      "expectedSources": ["README.md", "docs/configuration.md"],
+      "expectedAnswerContains": ["KnowledgeLLM:PgVector:Enabled", "true", "ConnectionString"]
+    },
+    {
+      "id": "in-memory-mode-012",
+      "question": "When should I use the in-memory vector store mode?",
+      "expectedSources": ["docs/configuration.md", "README.md"],
+      "expectedAnswerContains": ["local development", "ephemeral", "false"]
+    },
+    {
+      "id": "docker-compose-013",
+      "question": "What services does Docker Compose start for KnowledgeLLM?",
+      "expectedSources": ["docs/configuration.md", "docs/demo.md"],
+      "expectedAnswerContains": ["KnowledgeLLM API", "PostgreSQL", "pgvector"]
+    },
+    {
+      "id": "indexing-flow-014",
+      "question": "What are the major steps in the document indexing flow?",
+      "expectedSources": ["docs/architecture.md", "README.md"],
+      "expectedAnswerContains": ["load", "chunk", "embed", "Upsert"]
+    },
+    {
+      "id": "query-flow-015",
+      "question": "What are the major steps in the query flow?",
+      "expectedSources": ["docs/architecture.md", "README.md"],
+      "expectedAnswerContains": ["embed", "Search", "PromptBuilder", "ChatAsync"]
+    },
+    {
+      "id": "no-sources-016",
+      "question": "What happens when retrieval returns no source chunks?",
+      "expectedSources": ["docs/architecture.md"],
+      "expectedAnswerContains": ["NOT_FOUND", "without context"]
+    },
+    {
+      "id": "security-api-key-017",
+      "question": "How should OpenAI API keys be handled securely?",
+      "expectedSources": ["docs/security.md", "README.md", "docs/configuration.md"],
+      "expectedAnswerContains": ["user-secrets", "environment variables", "never committed"]
+    },
+    {
+      "id": "security-path-validation-018",
+      "question": "What path and file restrictions help keep indexing safe?",
+      "expectedSources": ["docs/security.md"],
+      "expectedAnswerContains": ["path validation", "file", "restrictions"]
+    },
+    {
+      "id": "prompt-injection-019",
+      "question": "What prompt injection considerations are documented for KnowledgeLLM?",
+      "expectedSources": ["docs/security.md"],
+      "expectedAnswerContains": ["prompt injection", "source", "grounded"]
+    },
+    {
+      "id": "testing-default-020",
+      "question": "What should the default test suite avoid requiring?",
+      "expectedSources": ["docs/testing.md"],
+      "expectedAnswerContains": ["OpenAI credentials", "PostgreSQL", "default suite"]
+    },
+    {
+      "id": "ci-steps-021",
+      "question": "Which steps does the CI workflow run?",
+      "expectedSources": ["docs/testing.md", ".github/workflows/ci.yml"],
+      "expectedAnswerContains": ["restore", "build", "test", "coverage"]
+    },
+    {
+      "id": "pdf-opt-in-022",
+      "question": "How is PDF support registered in the application?",
+      "expectedSources": ["README.md", "docs/configuration.md"],
+      "expectedAnswerContains": ["AddPdfDocumentLoader", "AddKnowledgeLLM"]
+    }
+  ]
+}
