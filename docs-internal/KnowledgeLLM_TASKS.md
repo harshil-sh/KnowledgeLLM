@@ -105,7 +105,7 @@
 
 - [x] Add API authentication example
 
-- [ ] Add deployment guide
+- [x] Add deployment guide
   - Azure App Service
   - Containers
   - PostgreSQL hosting
