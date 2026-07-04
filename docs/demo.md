@@ -6,7 +6,7 @@ This walkthrough demonstrates the core KnowledgeLLM API flow: index a local know
 
 - .NET 8 SDK installed.
 - An OpenAI API key configured with user secrets or environment variables.
-- A folder containing `.txt` or `.pdf` files to index.
+- A folder containing `.txt`, `.pdf`, or `.docx` files to index. This repository includes `samples/documents` for a ready-to-use demo source.
 - Optional: `jq` for formatted JSON output.
 
 ```bash
@@ -18,16 +18,7 @@ By default, the API is available at `http://localhost:5000` when launched with t
 
 ## Sample knowledge source
 
-Create a small text document for the demo:
-
-```bash
-mkdir -p /tmp/knowledgellm-demo
-cat > /tmp/knowledgellm-demo/handbook.txt <<'TXT'
-KnowledgeLLM answers questions from indexed documents.
-The demo handbook says support requests should receive an initial response within one business day.
-The escalation owner is the platform engineering team.
-TXT
-```
+Use the committed sample document pack at `samples/documents`, or create your own folder of supported files. The sample pack includes a small support handbook and product FAQ that are safe to index during local demos.
 
 ## 1. Index documents with `/index`
 
@@ -36,15 +27,15 @@ TXT
 ```bash
 curl -s -X POST http://localhost:5000/api/knowledge/index \
   -H "Content-Type: application/json" \
-  -d '{"source":"/tmp/knowledgellm-demo"}' | jq
+  -d '{"source":"samples/documents"}' | jq
 ```
 
 Example response:
 
 ```json
 {
-  "chunksIndexed": 1,
-  "source": "/tmp/knowledgellm-demo"
+  "chunksIndexed": 2,
+  "source": "samples/documents"
 }
 ```
 
@@ -56,8 +47,8 @@ Example response:
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ $ curl -s -X POST http://localhost:5000/api/knowledge/index ... | jq         │
 │ {                                                                           │
-│   "chunksIndexed": 1,                                                       │
-│   "source": "/tmp/knowledgellm-demo"                                       │
+│   "chunksIndexed": 2,                                                       │
+│   "source": "samples/documents"                                             │
 │ }                                                                           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -79,9 +70,9 @@ Example response:
   "answer": "Escalations are owned by the platform engineering team.",
   "sources": [
     {
-      "chunkId": "handbook.txt:0",
-      "documentId": "/tmp/knowledgellm-demo/handbook.txt",
-      "content": "KnowledgeLLM answers questions from indexed documents...",
+      "chunkId": "company-handbook.txt:0",
+      "documentId": "samples/documents/company-handbook.txt",
+      "content": "# Acme Support Handbook\n\nAcme Support uses KnowledgeLLM...",
       "score": 0.86
     }
   ]
@@ -98,7 +89,8 @@ Example response:
 │ {                                                                           │
 │   "answer": "Escalations are owned by the platform engineering team.",      │
 │   "sources": [                                                             │
-│     { "documentId": "/tmp/knowledgellm-demo/handbook.txt", "score": 0.86 }│
+│     { "documentId": "samples/documents/company-handbook.txt",               │
+│       "score": 0.86 }                                                        │
 │   ]                                                                         │
 │ }                                                                           │
 └─────────────────────────────────────────────────────────────────────────────┘

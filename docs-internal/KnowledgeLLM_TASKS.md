@@ -101,7 +101,7 @@
 
 - [x] Add Word document loader (.docx)
 
-- [ ] Add sample document pack
+- [x] Add sample document pack
 
 - [ ] Add API authentication example
 

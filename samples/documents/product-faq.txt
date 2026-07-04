@@ -1,0 +1,7 @@
+# Product FAQ
+
+The KnowledgeLLM demo product supports document-grounded question answering over local .txt, .pdf, and .docx files.
+
+The default development mode stores vectors in memory, which is useful for local demos and automated tests. PostgreSQL with pgvector can be enabled when persistent vector storage is required.
+
+The streaming endpoint is /api/knowledge/ask/stream and returns Server-Sent Events so clients can display answer tokens as they are generated.
