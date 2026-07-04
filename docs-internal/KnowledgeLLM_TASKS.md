@@ -103,7 +103,7 @@
 
 - [x] Add sample document pack
 
-- [ ] Add API authentication example
+- [x] Add API authentication example
 
 - [ ] Add deployment guide
   - Azure App Service

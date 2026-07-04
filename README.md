@@ -104,6 +104,7 @@ Keys live under the `KnowledgeLLM` section in `appsettings.json`, or as environm
 | `KnowledgeLLM:Chunker:Overlap` | `100` | Overlapping characters between consecutive chunks |
 | `KnowledgeLLM:PgVector:Enabled` | `false` | `true` → PostgreSQL/pgvector store; `false` → in-memory |
 | `KnowledgeLLM:PgVector:ConnectionString` | *(empty)* | Npgsql connection string (required when enabled) |
+| `KnowledgeLLM:Api:ApiKey` | *(empty)* | Optional API key expected in the `X-Api-Key` header; see [`docs/api-authentication.md`](docs/api-authentication.md) |
 
 > **PDF and Word support** are opt-in: call `services.AddPdfDocumentLoader()` after `AddKnowledgeLLM(...)` in `Program.cs` to enable `.pdf` and `.docx` loading alongside `.txt`.
 
