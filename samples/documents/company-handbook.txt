@@ -1,0 +1,7 @@
+# Acme Support Handbook
+
+Acme Support uses KnowledgeLLM to answer questions from internal operating documents. Support requests should receive an initial response within one business day.
+
+Escalations are owned by the platform engineering team. Critical incidents should be acknowledged within fifteen minutes and summarized in the incident log after resolution.
+
+Customer-facing answers should cite the source document when possible and avoid guessing when the indexed knowledge base does not contain an answer.
